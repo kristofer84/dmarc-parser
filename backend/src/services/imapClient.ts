@@ -31,7 +31,16 @@ export class ImapClient {
       port: config.imap.port,
       tls: true,
       tlsOptions: {
-        rejectUnauthorized: false, // For self-signed certificates
+        rejectUnauthorized: false,
+        servername: config.imap.host, // Explicitly set server name for SNI
+        secureProtocol: 'TLSv1_2_method', // Force TLS 1.2
+      },
+      connTimeout: 60000, // 60 second connection timeout
+      authTimeout: 30000, // 30 second auth timeout
+      keepalive: {
+        interval: 10000, // Send keepalive every 10 seconds
+        idleInterval: 300000, // 5 minutes
+        forceNoop: true,
       },
     });
 
@@ -47,6 +56,12 @@ export class ImapClient {
 
     this.imap.once('error', (err: Error) => {
       console.error('❌ IMAP connection error:', err.message);
+      console.error('❌ Error details:', {
+        code: (err as any).code,
+        errno: (err as any).errno,
+        syscall: (err as any).syscall,
+        stack: err.stack,
+      });
       this.connected = false;
     });
 
