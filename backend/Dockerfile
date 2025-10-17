@@ -1,7 +1,13 @@
 # Multi-stage build for production
-FROM node:18-alpine AS builder
+FROM node:18-slim AS builder
 
 WORKDIR /app
+
+# Install OpenSSL and other dependencies needed for Prisma
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
@@ -21,12 +27,16 @@ RUN npx prisma generate
 RUN npm run build
 
 # Production stage
-FROM node:18-alpine AS production
+FROM node:18-slim AS production
 
 WORKDIR /app
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install OpenSSL and curl for Prisma and health checks
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
@@ -42,9 +52,9 @@ COPY prisma ./prisma
 # Create data directory
 RUN mkdir -p /app/data
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S dmarc -u 1001
+# Create non-root user (Debian syntax)
+RUN groupadd --gid 1001 nodejs
+RUN useradd --uid 1001 --gid nodejs --shell /bin/bash --create-home dmarc
 RUN chown -R dmarc:nodejs /app
 USER dmarc
 
