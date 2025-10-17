@@ -20,7 +20,7 @@ export function createApp(): express.Application {
   // Middleware
   app.use(cors({
     origin: process.env.NODE_ENV === 'production' 
-      ? ['http://localhost:5173', 'http://localhost:4173'] // Add your production domains
+      ? ['http://localhost:8097', 'http://localhost:4173'] // Add your production domains
       : true,
     credentials: true,
   }));

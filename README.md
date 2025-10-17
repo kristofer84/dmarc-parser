@@ -89,7 +89,7 @@ The API will be available at `http://localhost:3000`
 cd frontend
 npm run dev
 ```
-The web interface will be available at `http://localhost:5173`
+The web interface will be available at `http://localhost:8097`
 
 ### Production Mode
 

@@ -54,7 +54,7 @@ REM Start services
 echo.
 echo 🚀 Starting services...
 echo 📍 Backend API: http://localhost:3000
-echo 📍 Frontend: http://localhost:5173
+echo 📍 Frontend: http://localhost:8097
 echo.
 echo Press Ctrl+C to stop all services
 echo.
