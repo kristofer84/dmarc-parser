@@ -20,7 +20,7 @@ async function startServer() {
     const app = createApp();
 
     // Start HTTP server
-    const server = app.listen(config.server.port, () => {
+    const server = app.listen(config.server.port, '0.0.0.0', () => {
       console.log(`✅ Server running on port ${config.server.port}`);
       console.log(`🔗 Health check: http://localhost:${config.server.port}/health`);
       console.log(`📊 API endpoints:`);

@@ -20,7 +20,14 @@ export function createApp(): express.Application {
   // Middleware
   app.use(cors({
     origin: process.env.NODE_ENV === 'production' 
-      ? ['http://localhost:8097', 'http://localhost:4173'] // Add your production domains
+      ? (origin, callback) => {
+          // Allow any origin that ends with :8097 or :4173 (frontend ports)
+          if (!origin || origin.endsWith(':8097') || origin.endsWith(':4173')) {
+            callback(null, true);
+          } else {
+            callback(new Error('Not allowed by CORS'));
+          }
+        }
       : true,
     credentials: true,
   }));
