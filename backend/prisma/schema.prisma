@@ -1,0 +1,42 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Report {
+  id              String   @id @default(cuid())
+  domain          String
+  reportId        String   @unique
+  orgName         String
+  email           String
+  startDate       DateTime
+  endDate         DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  records         Record[]
+  
+  @@map("reports")
+}
+
+model Record {
+  id              String   @id @default(cuid())
+  reportId        String
+  sourceIp        String
+  count           Int
+  disposition     String   // none, quarantine, reject
+  dkim            String   // pass, fail
+  spf             String   // pass, fail
+  headerFrom      String
+  
+  report          Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  
+  @@map("records")
+}
