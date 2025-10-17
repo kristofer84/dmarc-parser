@@ -1,6 +1,7 @@
 import { parseString } from 'xml2js';
 import { promisify } from 'util';
 import * as zlib from 'zlib';
+import * as yauzl from 'yauzl';
 
 const parseXml = promisify(parseString);
 
@@ -64,7 +65,8 @@ export class DmarcParser {
       
       // Check if content is zipped (starts with PK)
       if (xmlContent[0] === 0x50 && xmlContent[1] === 0x4b) {
-        throw new Error('ZIP files are not supported yet. Please extract the XML manually.');
+        console.log('🔄 Extracting XML from ZIP file...');
+        content = await this.extractFromZip(xmlContent);
       }
 
       const xmlString = content.toString('utf-8');
@@ -84,6 +86,66 @@ export class DmarcParser {
           return;
         }
         resolve(result);
+      });
+    });
+  }
+
+  private async extractFromZip(content: Buffer): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      yauzl.fromBuffer(content, { lazyEntries: true }, (err, zipfile) => {
+        if (err) {
+          reject(new Error(`Failed to open ZIP file: ${err.message}`));
+          return;
+        }
+
+        if (!zipfile) {
+          reject(new Error('Failed to open ZIP file: zipfile is null'));
+          return;
+        }
+
+        zipfile.readEntry();
+        
+        zipfile.on('entry', (entry) => {
+          // Look for XML files (DMARC reports are typically .xml files)
+          if (entry.fileName.toLowerCase().endsWith('.xml')) {
+            zipfile.openReadStream(entry, (err, readStream) => {
+              if (err) {
+                reject(new Error(`Failed to read ZIP entry: ${err.message}`));
+                return;
+              }
+
+              if (!readStream) {
+                reject(new Error('Failed to read ZIP entry: readStream is null'));
+                return;
+              }
+
+              const chunks: Buffer[] = [];
+              readStream.on('data', (chunk) => {
+                chunks.push(chunk);
+              });
+
+              readStream.on('end', () => {
+                const xmlBuffer = Buffer.concat(chunks);
+                resolve(xmlBuffer);
+              });
+
+              readStream.on('error', (err) => {
+                reject(new Error(`Failed to read XML from ZIP: ${err.message}`));
+              });
+            });
+          } else {
+            // Continue reading entries if this isn't an XML file
+            zipfile.readEntry();
+          }
+        });
+
+        zipfile.on('end', () => {
+          reject(new Error('No XML files found in ZIP archive'));
+        });
+
+        zipfile.on('error', (err) => {
+          reject(new Error(`ZIP file error: ${err.message}`));
+        });
       });
     });
   }
@@ -204,7 +266,7 @@ export class DmarcParser {
     };
   }
 
-  extractRecords(report: DmarcReport): Array<{
+  extractRecordsForDb(report: DmarcReport): Array<{
     sourceIp: string;
     count: number;
     disposition: string;
@@ -376,7 +438,7 @@ export class DmarcParser {
     }>;
   } {
     const metadata = this.extractMetadata(report);
-    const records = this.extractRecords(report);
+    const records = this.extractRecordsForDb(report);
     
     return {
       reportData: metadata,
