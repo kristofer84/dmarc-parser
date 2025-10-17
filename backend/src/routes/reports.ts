@@ -116,7 +116,7 @@ router.get('/',
       };
     });
 
-    res.json({
+    return res.json({
       data: reportSummaries,
       pagination: {
         page,
@@ -127,7 +127,7 @@ router.get('/',
     });
 
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -202,10 +202,10 @@ router.get('/:id',
       })),
     };
 
-    res.json(detailedReport);
+    return res.json(detailedReport);
 
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 

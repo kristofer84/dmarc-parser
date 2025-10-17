@@ -34,95 +34,95 @@ export interface DashboardStats {
 // GET /summary - Get aggregated dashboard statistics
 router.get('/',
   rateLimit(20, 60000), // 20 requests per minute (expensive operation)
-  async (req, res, next) => {
-  try {
-    console.log('🔄 Calculating dashboard statistics...');
+  async (_req, res, next) => {
+    try {
+      console.log('🔄 Calculating dashboard statistics...');
 
-    // Get basic counts
-    const totalReports = await prisma.report.count();
-    
-    if (totalReports === 0) {
-      // Return empty stats if no reports
-      const emptyStats: DashboardStats = {
-        totalReports: 0,
-        totalMessages: 0,
-        avgSpfPassRate: 0,
-        avgDkimPassRate: 0,
-        policyDistribution: { none: 0, quarantine: 0, reject: 0 },
-        trendsData: [],
-        topSources: [],
-        topIPs: [],
-      };
-      
-      return res.json(emptyStats);
-    }
+      // Get basic counts
+      const totalReports = await prisma.report.count();
 
-    // Get all reports with records for calculations
-    const reports = await prisma.report.findMany({
-      include: {
-        records: true,
-      },
-      orderBy: {
-        startDate: 'desc',
-      },
-    });
+      if (totalReports === 0) {
+        // Return empty stats if no reports
+        const emptyStats: DashboardStats = {
+          totalReports: 0,
+          totalMessages: 0,
+          avgSpfPassRate: 0,
+          avgDkimPassRate: 0,
+          policyDistribution: { none: 0, quarantine: 0, reject: 0 },
+          trendsData: [],
+          topSources: [],
+          topIPs: [],
+        };
 
-    // Calculate total messages and pass rates
-    let totalMessages = 0;
-    let totalSpfPass = 0;
-    let totalDkimPass = 0;
-    const policyDistribution = { none: 0, quarantine: 0, reject: 0 };
+        return res.json(emptyStats);
+      }
 
-    reports.forEach(report => {
-      report.records.forEach(record => {
-        totalMessages += record.count;
-        
-        if (record.spf === 'pass') {
-          totalSpfPass += record.count;
-        }
-        
-        if (record.dkim === 'pass') {
-          totalDkimPass += record.count;
-        }
-        
-        // Count policy distributions
-        if (record.disposition in policyDistribution) {
-          policyDistribution[record.disposition as keyof typeof policyDistribution] += record.count;
-        }
+      // Get all reports with records for calculations
+      const reports = await prisma.report.findMany({
+        include: {
+          records: true,
+        },
+        orderBy: {
+          startDate: 'desc',
+        },
       });
-    });
 
-    // Calculate average pass rates
-    const avgSpfPassRate = totalMessages > 0 ? Math.round((totalSpfPass / totalMessages) * 100) : 0;
-    const avgDkimPassRate = totalMessages > 0 ? Math.round((totalDkimPass / totalMessages) * 100) : 0;
+      // Calculate total messages and pass rates
+      let totalMessages = 0;
+      let totalSpfPass = 0;
+      let totalDkimPass = 0;
+      const policyDistribution = { none: 0, quarantine: 0, reject: 0 };
 
-    // Generate trends data (last 30 days or available data)
-    const trendsData = generateTrendsData(reports);
+      reports.forEach(report => {
+        report.records.forEach(record => {
+          totalMessages += record.count;
 
-    // Calculate top sources (organizations)
-    const topSources = calculateTopSources(reports);
+          if (record.spf === 'pass') {
+            totalSpfPass += record.count;
+          }
 
-    // Calculate top IPs
-    const topIPs = calculateTopIPs(reports);
+          if (record.dkim === 'pass') {
+            totalDkimPass += record.count;
+          }
 
-    const stats: DashboardStats = {
-      totalReports,
-      totalMessages,
-      avgSpfPassRate,
-      avgDkimPassRate,
-      policyDistribution,
-      trendsData,
-      topSources,
-      topIPs,
-    };
+          // Count policy distributions
+          if (record.disposition in policyDistribution) {
+            policyDistribution[record.disposition as keyof typeof policyDistribution] += record.count;
+          }
+        });
+      });
 
-    console.log('✅ Dashboard statistics calculated');
-    res.json(stats);
+      // Calculate average pass rates
+      const avgSpfPassRate = totalMessages > 0 ? Math.round((totalSpfPass / totalMessages) * 100) : 0;
+      const avgDkimPassRate = totalMessages > 0 ? Math.round((totalDkimPass / totalMessages) * 100) : 0;
 
-  } catch (error) {
-    next(error);
-  }
-});
+      // Generate trends data (last 30 days or available data)
+      const trendsData = generateTrendsData(reports);
+
+      // Calculate top sources (organizations)
+      const topSources = calculateTopSources(reports);
+
+      // Calculate top IPs
+      const topIPs = calculateTopIPs(reports);
+
+      const stats: DashboardStats = {
+        totalReports,
+        totalMessages,
+        avgSpfPassRate,
+        avgDkimPassRate,
+        policyDistribution,
+        trendsData,
+        topSources,
+        topIPs,
+      };
+
+      console.log('✅ Dashboard statistics calculated');
+      return res.json(stats);
+
+    } catch (error) {
+      return next(error);
+    }
+  });
 
 function generateTrendsData(reports: any[]): DashboardStats['trendsData'] {
   // Group reports by date
@@ -130,16 +130,16 @@ function generateTrendsData(reports: any[]): DashboardStats['trendsData'] {
 
   reports.forEach(report => {
     const dateKey = report.startDate.toISOString().split('T')[0]; // YYYY-MM-DD
-    
+
     if (!dateGroups.has(dateKey)) {
       dateGroups.set(dateKey, { messageCount: 0, failureCount: 0 });
     }
-    
+
     const group = dateGroups.get(dateKey)!;
-    
+
     report.records.forEach((record: any) => {
       group.messageCount += record.count;
-      
+
       // Count failures (either SPF or DKIM fail)
       if (record.spf === 'fail' || record.dkim === 'fail') {
         group.failureCount += record.count;
@@ -167,10 +167,10 @@ function calculateTopSources(reports: any[]): DashboardStats['topSources'] {
     if (!sourceGroups.has(report.orgName)) {
       sourceGroups.set(report.orgName, { reportCount: 0, messageCount: 0 });
     }
-    
+
     const group = sourceGroups.get(report.orgName)!;
     group.reportCount++;
-    
+
     report.records.forEach((record: any) => {
       group.messageCount += record.count;
     });
@@ -194,10 +194,10 @@ function calculateTopIPs(reports: any[]): DashboardStats['topIPs'] {
       if (!ipGroups.has(record.sourceIp)) {
         ipGroups.set(record.sourceIp, { messageCount: 0, failureCount: 0 });
       }
-      
+
       const group = ipGroups.get(record.sourceIp)!;
       group.messageCount += record.count;
-      
+
       // Count failures
       if (record.spf === 'fail' || record.dkim === 'fail') {
         group.failureCount += record.count;
