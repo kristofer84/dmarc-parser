@@ -355,18 +355,35 @@ export class ImapClient {
 
       console.log(`📬 Found ${messages.length} messages with DMARC attachments`);
       
-      // Mark processed messages as read (only if they weren't already read)
-      if (!includeRead) {
-        const messageUids = messages.map(m => m.uid);
-        await this.markMultipleAsRead(messageUids);
-      }
-      
-      console.log('✅ Email processing completed');
+      // Don't mark as read here - let the EmailProcessor handle it after successful processing
+      console.log('✅ Email fetching completed');
       return messages;
       
     } catch (error) {
       console.error('❌ Email processing failed:', error);
       throw error;
+    }
+  }
+
+  async markProcessedMessagesAsRead(processedMessageUids: number[]): Promise<void> {
+    if (processedMessageUids.length === 0) {
+      console.log('📭 No message UIDs provided to mark as read');
+      return;
+    }
+
+    if (!this.connected) {
+      console.error('❌ Cannot mark messages as read: IMAP client not connected');
+      return;
+    }
+
+    console.log(`📧 Marking ${processedMessageUids.length} messages as read: [${processedMessageUids.join(', ')}]`);
+
+    try {
+      await this.markMultipleAsRead(processedMessageUids);
+      console.log(`✅ Successfully marked ${processedMessageUids.length} messages as read`);
+    } catch (error) {
+      console.error('❌ Failed to mark processed messages as read:', error);
+      // Don't throw here - we don't want to fail the entire process if marking as read fails
     }
   }
 }

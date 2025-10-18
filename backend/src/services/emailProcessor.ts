@@ -54,10 +54,16 @@ export class EmailProcessor {
 
       console.log(`📬 Processing ${messages.length} DMARC reports...`);
 
+      // Track successfully processed messages to mark as read
+      const successfullyProcessedUids: number[] = [];
+
       // Process each message
       for (const message of messages) {
         try {
-          await this.processMessage(message, result);
+          const messageProcessed = await this.processMessage(message, result);
+          if (messageProcessed) {
+            successfullyProcessedUids.push(message.uid);
+          }
         } catch (error) {
           console.error(`❌ Failed to process message ${message.uid}:`, error);
           result.errors++;
@@ -66,6 +72,14 @@ export class EmailProcessor {
             message: `Failed to process message ${message.uid}: ${error}`,
           });
         }
+      }
+
+      // Mark successfully processed messages as read
+      if (successfullyProcessedUids.length > 0) {
+        console.log(`📧 Attempting to mark ${successfullyProcessedUids.length} messages as read: [${successfullyProcessedUids.join(', ')}]`);
+        await this.imapClient.markProcessedMessagesAsRead(successfullyProcessedUids);
+      } else {
+        console.log('📭 No messages were successfully processed, nothing to mark as read');
       }
 
       console.log('✅ Email processing completed');
@@ -86,13 +100,16 @@ export class EmailProcessor {
     }
   }
 
-  private async processMessage(message: EmailMessage, result: ProcessingResult): Promise<void> {
+  private async processMessage(message: EmailMessage, result: ProcessingResult): Promise<boolean> {
     console.log(`🔄 Processing message from ${message.from} - ${message.subject}`);
+
+    let hasSuccessfulAttachment = false;
 
     // Process each attachment
     for (const attachment of message.attachments) {
       try {
         await this.processAttachment(attachment.content, message, result);
+        hasSuccessfulAttachment = true;
       } catch (error) {
         console.error(`❌ Failed to process attachment ${attachment.filename}:`, error);
         result.errors++;
@@ -102,6 +119,8 @@ export class EmailProcessor {
         });
       }
     }
+
+    return hasSuccessfulAttachment;
   }
 
   private async processAttachment(xmlContent: Buffer, message: EmailMessage, result: ProcessingResult): Promise<void> {
