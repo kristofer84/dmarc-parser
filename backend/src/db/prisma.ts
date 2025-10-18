@@ -38,12 +38,12 @@ export async function disconnectDatabase() {
 export async function initializeDatabase() {
   try {
     console.log('🔄 Initializing database...');
-    
+
     // Import exec to run prisma commands
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
     const execAsync = promisify(exec);
-    
+
     // Always run prisma db push to ensure schema is up to date
     // This will create tables if they don't exist or update them if needed
     try {
@@ -54,10 +54,10 @@ export async function initializeDatabase() {
       console.error('❌ Failed to synchronize database schema:', pushError);
       throw pushError;
     }
-    
+
     // Now connect to verify everything is working
     await connectDatabase();
-    
+
     // Test the connection by running a simple query
     try {
       await prisma.report.count();
@@ -66,7 +66,7 @@ export async function initializeDatabase() {
       console.error('❌ Database table verification failed:', queryError);
       throw queryError;
     }
-    
+
     console.log('✅ Database initialized successfully');
   } catch (error) {
     console.error('❌ Database initialization failed:', error);

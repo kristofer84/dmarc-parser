@@ -52,40 +52,61 @@ router.get('/',
     const sortBy = req.query.sortBy as string || 'startDate';
     const sortOrder = req.query.sortOrder as string || 'desc';
 
-    // Build where clause
-    const where: any = {};
-    if (domain) {
-      where.domain = { contains: domain, mode: 'insensitive' };
-    }
-    if (orgName) {
-      where.orgName = { contains: orgName, mode: 'insensitive' };
+    // Build WHERE conditions for case-insensitive search
+    let whereClause = '';
+    const queryParams: any[] = [];
+    
+    if (domain && orgName) {
+      whereClause = 'WHERE LOWER(domain) LIKE LOWER(?) AND LOWER(orgName) LIKE LOWER(?)';
+      queryParams.push(`%${domain}%`, `%${orgName}%`);
+    } else if (domain) {
+      whereClause = 'WHERE LOWER(domain) LIKE LOWER(?)';
+      queryParams.push(`%${domain}%`);
+    } else if (orgName) {
+      whereClause = 'WHERE LOWER(orgName) LIKE LOWER(?)';
+      queryParams.push(`%${orgName}%`);
     }
 
-    // Build orderBy clause
+    // Build ORDER BY clause
     const validSortFields = ['domain', 'orgName', 'startDate', 'endDate', 'createdAt'];
-    const orderBy: any = {};
-    if (validSortFields.includes(sortBy)) {
-      orderBy[sortBy] = sortOrder === 'asc' ? 'asc' : 'desc';
-    } else {
-      orderBy.startDate = 'desc';
-    }
+    const sortField = validSortFields.includes(sortBy) ? sortBy : 'startDate';
+    const sortDirection = sortOrder === 'asc' ? 'ASC' : 'DESC';
 
-    // Get reports with aggregated data
-    const reports = await prisma.report.findMany({
-      where,
-      include: {
-        records: true,
-      },
-      orderBy,
-      skip: offset,
-      take: limit,
-    });
+    // Get reports with case-insensitive filtering using raw SQL
+    const reportsQuery = `
+      SELECT * FROM reports 
+      ${whereClause}
+      ORDER BY ${sortField} ${sortDirection}
+      LIMIT ? OFFSET ?
+    `;
+    
+    const reports = await prisma.$queryRawUnsafe(
+      reportsQuery,
+      ...queryParams,
+      limit,
+      offset
+    ) as any[];
+
+    // Get records for each report
+    const reportsWithRecords = await Promise.all(
+      reports.map(async (report) => {
+        const records = await prisma.record.findMany({
+          where: { reportId: report.id },
+        });
+        return { ...report, records };
+      })
+    );
 
     // Get total count for pagination
-    const totalCount = await prisma.report.count({ where });
+    const countQuery = `SELECT COUNT(*) as count FROM reports ${whereClause}`;
+    const totalCountResult = await prisma.$queryRawUnsafe(
+      countQuery,
+      ...queryParams
+    ) as any[];
+    const totalCount = totalCountResult[0].count;
 
     // Transform to API format
-    const reportSummaries: ReportSummary[] = reports.map(report => {
+    const reportSummaries: ReportSummary[] = reportsWithRecords.map(report => {
       const totalMessages = report.records.reduce((sum, record) => sum + record.count, 0);
       const spfPassCount = report.records
         .filter(record => record.spf === 'pass')
@@ -107,8 +128,8 @@ router.get('/',
         id: report.id,
         domain: report.domain,
         orgName: report.orgName,
-        startDate: report.startDate.toISOString(),
-        endDate: report.endDate.toISOString(),
+        startDate: new Date(report.startDate).toISOString(),
+        endDate: new Date(report.endDate).toISOString(),
         totalMessages,
         spfPassRate: totalMessages > 0 ? Math.round((spfPassCount / totalMessages) * 100) : 0,
         dkimPassRate: totalMessages > 0 ? Math.round((dkimPassCount / totalMessages) * 100) : 0,
