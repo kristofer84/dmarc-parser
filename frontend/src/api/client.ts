@@ -93,7 +93,13 @@ class ApiClient {
 
   // Health check
   async healthCheck(): Promise<{ status: string; timestamp: string; uptime: number }> {
-    const response = await this.client.get('/health');
+    // Use absolute URL to bypass the /api base URL
+    const response = await axios.get('/health', {
+      timeout: 5000,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
     return response.data;
   }
 }
