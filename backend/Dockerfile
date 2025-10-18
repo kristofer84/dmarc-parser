@@ -31,11 +31,12 @@ FROM node:18-slim AS production
 
 WORKDIR /app
 
-# Install OpenSSL and curl for Prisma and health checks
+# Install OpenSSL, curl, and su-exec for Prisma and health checks
 RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     curl \
+    su-exec \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
@@ -49,21 +50,15 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
 
-# Create data directory
-RUN mkdir -p /app/data
-
-# Create non-root user (Debian syntax)
-RUN groupadd --gid 1001 nodejs
-RUN useradd --uid 1001 --gid nodejs --shell /bin/bash --create-home dmarc
-RUN chown -R dmarc:nodejs /app
-USER dmarc
+# Create data directory and ensure it's writable
+RUN mkdir -p /app/data && chmod 777 /app/data
 
 # Expose port
-EXPOSE 3000
+EXPOSE 8096
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+  CMD curl -f http://localhost:8096/health || exit 1
 
 # Start the application
 CMD ["npm", "start"]

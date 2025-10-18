@@ -37,11 +37,30 @@ export async function disconnectDatabase() {
 // Database initialization
 export async function initializeDatabase() {
   try {
-    // Push the schema to create tables if they don't exist
     console.log('🔄 Initializing database...');
     
-    // Test the connection
-    await connectDatabase();
+    // First, try to connect and create the database if it doesn't exist
+    try {
+      await connectDatabase();
+    } catch (error) {
+      console.log('📝 Database file not found, creating...');
+      
+      // Import exec to run prisma db push
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execAsync = promisify(exec);
+      
+      try {
+        await execAsync('npx prisma db push', { cwd: process.cwd() });
+        console.log('✅ Database schema created');
+        
+        // Try connecting again
+        await connectDatabase();
+      } catch (pushError) {
+        console.error('❌ Failed to create database schema:', pushError);
+        throw pushError;
+      }
+    }
     
     console.log('✅ Database initialized successfully');
   } catch (error) {
