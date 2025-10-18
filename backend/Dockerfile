@@ -36,7 +36,6 @@ RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     curl \
-    su-exec \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
