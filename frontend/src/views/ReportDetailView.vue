@@ -252,10 +252,10 @@ const { data, loading, error, refresh } = useAsyncData(() => reportsApi.getRepor
 // Table columns for records
 const recordColumns = [
   { key: 'sourceIp', label: 'Source IP', sortable: true },
-  { key: 'count', label: 'Messages', sortable: true, type: 'number' },
-  { key: 'disposition', label: 'Disposition', sortable: true, type: 'badge' },
-  { key: 'dkim', label: 'DKIM', sortable: true, type: 'badge' },
-  { key: 'spf', label: 'SPF', sortable: true, type: 'badge' },
+  { key: 'count', label: 'Messages', sortable: true, type: 'number' as const },
+  { key: 'disposition', label: 'Disposition', sortable: true, type: 'badge' as const },
+  { key: 'dkim', label: 'DKIM', sortable: true, type: 'badge' as const },
+  { key: 'spf', label: 'SPF', sortable: true, type: 'badge' as const },
   { key: 'headerFrom', label: 'Header From', sortable: true },
 ];
 

@@ -86,7 +86,7 @@
         :columns="columns"
         :data="reports"
         :loading="loading"
-        :pagination="pagination"
+        :pagination="pagination || undefined"
         :sort-by="sortBy"
         :sort-order="sortOrder"
         title="DMARC Reports"
@@ -172,7 +172,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import DataTable from '@/components/DataTable.vue';
 import { reportsApi } from '@/api/client';
@@ -201,10 +201,10 @@ const columns = [
   { key: 'domain', label: 'Domain', sortable: true },
   { key: 'orgName', label: 'Organization', sortable: true },
   { key: 'dateRange', label: 'Report Period', sortable: false },
-  { key: 'totalMessages', label: 'Messages', sortable: true, type: 'number' },
-  { key: 'spfPassRate', label: 'SPF Pass Rate', sortable: true, type: 'percentage' },
-  { key: 'dkimPassRate', label: 'DKIM Pass Rate', sortable: true, type: 'percentage' },
-  { key: 'policyAction', label: 'Policy Action', sortable: true, type: 'badge' },
+  { key: 'totalMessages', label: 'Messages', sortable: true, type: 'number' as const },
+  { key: 'spfPassRate', label: 'SPF Pass Rate', sortable: true, type: 'percentage' as const },
+  { key: 'dkimPassRate', label: 'DKIM Pass Rate', sortable: true, type: 'percentage' as const },
+  { key: 'policyAction', label: 'Policy Action', sortable: true, type: 'badge' as const },
 ];
 
 // Debounced filter function

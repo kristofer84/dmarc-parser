@@ -7,42 +7,36 @@
     <div class="card-body">
       <div class="relative" :style="{ height: `${height}px` }">
         <canvas ref="chartCanvas"></canvas>
-        
+
         <!-- Loading state -->
-        <div 
-          v-if="loading" 
-          class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75"
-        >
+        <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75">
           <div class="flex items-center space-x-2">
             <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
             <span class="text-sm text-gray-600">Loading chart...</span>
           </div>
         </div>
-        
+
         <!-- Error state -->
-        <div 
-          v-if="error" 
-          class="absolute inset-0 flex items-center justify-center bg-white"
-        >
+        <div v-if="error" class="absolute inset-0 flex items-center justify-center bg-white">
           <div class="text-center">
             <div class="text-danger-500 mb-2">
               <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
               </svg>
             </div>
             <p class="text-sm text-gray-600">{{ error }}</p>
           </div>
         </div>
-        
+
         <!-- Empty state -->
-        <div 
-          v-if="!loading && !error && (!data || data.length === 0)" 
-          class="absolute inset-0 flex items-center justify-center bg-white"
-        >
+        <div v-if="!loading && !error && (!data || data.length === 0)"
+          class="absolute inset-0 flex items-center justify-center bg-white">
           <div class="text-center">
             <div class="text-gray-400 mb-2">
               <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
             <p class="text-sm text-gray-600">No data available</p>
@@ -66,6 +60,10 @@ import {
   Tooltip,
   Legend,
   ArcElement,
+  LineController,
+  DoughnutController,
+  PieController,
+  BarController,
   type ChartConfiguration,
   type ChartData,
   type ChartOptions,
@@ -81,7 +79,11 @@ Chart.register(
   Title,
   Tooltip,
   Legend,
-  ArcElement
+  ArcElement,
+  LineController,
+  DoughnutController,
+  PieController,
+  BarController
 );
 
 interface Props {
@@ -132,7 +134,7 @@ const createChartData = (): ChartData => {
 
 const createLineChartData = (): ChartData => {
   const labels = props.data.map(item => item.date || item.label);
-  
+
   return {
     labels,
     datasets: [
@@ -157,7 +159,7 @@ const createLineChartData = (): ChartData => {
 
 const createBarChartData = (): ChartData => {
   const labels = props.data.map(item => item.label || item.name);
-  
+
   return {
     labels,
     datasets: [
@@ -178,7 +180,7 @@ const createBarChartData = (): ChartData => {
 
 const createPieChartData = (): ChartData => {
   const labels = props.data.map(item => item.label || item.name);
-  
+
   return {
     labels,
     datasets: [

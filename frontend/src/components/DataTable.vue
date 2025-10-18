@@ -78,7 +78,7 @@
                       class="badge"
                       :class="getBadgeClass(getColumnValue(item, column.key))"
                     >
-                      {{ formatValue(getColumnValue(item, column.key), column) }}
+                      {{ formatValue(getColumnValue(item, column.key)) }}
                     </span>
                   </span>
                   <span v-else-if="column.type === 'date'">
@@ -91,7 +91,7 @@
                     {{ getColumnValue(item, column.key) }}%
                   </span>
                   <span v-else>
-                    {{ formatValue(getColumnValue(item, column.key), column) }}
+                    {{ formatValue(getColumnValue(item, column.key)) }}
                   </span>
                 </slot>
               </td>
@@ -163,7 +163,8 @@
               <button
                 v-for="page in visiblePages"
                 :key="page"
-                @click="handlePageChange(page)"
+                @click="typeof page === 'number' ? handlePageChange(page) : null"
+                :disabled="typeof page !== 'number'"
                 class="relative inline-flex items-center px-4 py-2 border text-sm font-medium"
                 :class="page === pagination.page 
                   ? 'z-10 bg-primary-50 border-primary-500 text-primary-600' 
@@ -252,7 +253,7 @@ const handlePageChange = (page: number) => {
   emit('pageChange', page);
 };
 
-const formatValue = (value: any, column: Column): string => {
+const formatValue = (value: any): string => {
   if (value === null || value === undefined) return '-';
   return value.toString();
 };
