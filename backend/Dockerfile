@@ -41,8 +41,8 @@ RUN apt-get update && apt-get install -y \
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Install all dependencies (including dev dependencies for Prisma CLI)
+RUN npm ci && npm cache clean --force
 
 # Copy built application
 COPY --from=builder /app/dist ./dist

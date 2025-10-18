@@ -39,27 +39,32 @@ export async function initializeDatabase() {
   try {
     console.log('🔄 Initializing database...');
     
-    // First, try to connect and create the database if it doesn't exist
+    // Import exec to run prisma commands
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+    
+    // Always run prisma db push to ensure schema is up to date
+    // This will create tables if they don't exist or update them if needed
     try {
-      await connectDatabase();
-    } catch (error) {
-      console.log('📝 Database file not found, creating...');
-      
-      // Import exec to run prisma db push
-      const { exec } = await import('child_process');
-      const { promisify } = await import('util');
-      const execAsync = promisify(exec);
-      
-      try {
-        await execAsync('npx prisma db push', { cwd: process.cwd() });
-        console.log('✅ Database schema created');
-        
-        // Try connecting again
-        await connectDatabase();
-      } catch (pushError) {
-        console.error('❌ Failed to create database schema:', pushError);
-        throw pushError;
-      }
+      console.log('📝 Ensuring database schema is up to date...');
+      await execAsync('npx prisma db push --accept-data-loss', { cwd: process.cwd() });
+      console.log('✅ Database schema synchronized');
+    } catch (pushError) {
+      console.error('❌ Failed to synchronize database schema:', pushError);
+      throw pushError;
+    }
+    
+    // Now connect to verify everything is working
+    await connectDatabase();
+    
+    // Test the connection by running a simple query
+    try {
+      await prisma.report.count();
+      console.log('✅ Database tables verified');
+    } catch (queryError) {
+      console.error('❌ Database table verification failed:', queryError);
+      throw queryError;
     }
     
     console.log('✅ Database initialized successfully');
