@@ -153,7 +153,7 @@ export class ImapClient {
     return this.connected;
   }
 
-  async fetchUnreadMessages(): Promise<EmailMessage[]> {
+  async fetchMessages(includeRead: boolean = false, limit?: number): Promise<EmailMessage[]> {
     if (!this.connected) {
       throw new Error('IMAP client not connected');
     }
@@ -161,23 +161,35 @@ export class ImapClient {
     await this.openInbox();
 
     return new Promise((resolve, reject) => {
-      // Search for unread messages
-      this.imap.search(['UNSEEN'], (err, results) => {
+      // Search criteria: unread messages or all messages
+      const searchCriteria = includeRead ? ['ALL'] : ['UNSEEN'];
+      
+      this.imap.search(searchCriteria, (err, results) => {
         if (err) {
           reject(new Error(`Failed to search messages: ${err.message}`));
           return;
         }
 
         if (!results || results.length === 0) {
-          console.log('📭 No unread messages found');
+          console.log(`📭 No ${includeRead ? '' : 'unread '}messages found`);
           resolve([]);
           return;
         }
 
-        console.log(`📬 Found ${results.length} unread messages`);
+        console.log(`📬 Found ${results.length} ${includeRead ? '' : 'unread '}messages`);
 
-        // Limit to last 50 messages as per MVP requirements
-        const messageIds = results.slice(-50);
+        // Apply limit if specified, otherwise use default limits
+        let messageIds: number[];
+        if (limit) {
+          messageIds = results.slice(-limit);
+        } else if (includeRead) {
+          // For first run, get all messages (no limit)
+          messageIds = results;
+          console.log(`📥 Processing all ${messageIds.length} messages for initial import`);
+        } else {
+          // For regular runs, limit to last 50 messages
+          messageIds = results.slice(-50);
+        }
         
         const fetch = this.imap.fetch(messageIds, {
           bodies: '',
@@ -228,6 +240,10 @@ export class ImapClient {
         });
       });
     });
+  }
+
+  async fetchUnreadMessages(): Promise<EmailMessage[]> {
+    return this.fetchMessages(false, 50);
   }
 
   private async parseEmailMessage(parsed: ParsedMail, uid: number): Promise<EmailMessage> {
@@ -325,23 +341,25 @@ export class ImapClient {
     });
   }
 
-  async processEmails(): Promise<EmailMessage[]> {
+  async processEmails(includeRead: boolean = false): Promise<EmailMessage[]> {
     try {
       console.log('🔄 Starting email processing...');
       
-      // Fetch unread messages with DMARC attachments
-      const messages = await this.fetchUnreadMessages();
+      // Fetch messages with DMARC attachments
+      const messages = await this.fetchMessages(includeRead);
       
       if (messages.length === 0) {
-        console.log('📭 No DMARC reports found in unread messages');
+        console.log(`📭 No DMARC reports found in ${includeRead ? 'all' : 'unread'} messages`);
         return [];
       }
 
       console.log(`📬 Found ${messages.length} messages with DMARC attachments`);
       
-      // Mark processed messages as read
-      const messageUids = messages.map(m => m.uid);
-      await this.markMultipleAsRead(messageUids);
+      // Mark processed messages as read (only if they weren't already read)
+      if (!includeRead) {
+        const messageUids = messages.map(m => m.uid);
+        await this.markMultipleAsRead(messageUids);
+      }
       
       console.log('✅ Email processing completed');
       return messages;

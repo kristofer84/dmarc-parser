@@ -33,14 +33,22 @@ export class EmailProcessor {
     try {
       console.log('🚀 Starting email processing service...');
 
+      // Check if this is the first run (empty database)
+      const reportCount = await prisma.report.count();
+      const isFirstRun = reportCount === 0;
+
+      if (isFirstRun) {
+        console.log('📊 Database is empty - performing initial import of all DMARC reports');
+      }
+
       // Connect to IMAP server
       await this.imapClient.connectWithRetry();
       
       // Fetch emails with DMARC attachments
-      const messages = await this.imapClient.processEmails();
+      const messages = await this.imapClient.processEmails(isFirstRun);
       
       if (messages.length === 0) {
-        console.log('📭 No new DMARC reports to process');
+        console.log('📭 No DMARC reports to process');
         return result;
       }
 
