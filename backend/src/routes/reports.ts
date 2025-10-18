@@ -89,7 +89,7 @@ router.get('/',
         id: string;
         reportId: string;
         sourceIp: string;
-        count: number;
+        count: number | bigint;
         disposition: string;
         dkim: string;
         spf: string;
@@ -130,22 +130,22 @@ router.get('/',
       const totalCountResult = await prisma.$queryRawUnsafe(
         countQuery,
         ...queryParams
-      ) as [{ count: number }];
-      const totalCount = totalCountResult[0].count;
+      ) as [{ count: bigint }];
+      const totalCount = Number(totalCountResult[0].count);
 
       // Transform to API format
       const reportSummaries: ReportSummary[] = reportsWithRecords.map((report: ReportWithRecords) => {
-        const totalMessages = report.records.reduce((sum: number, record: ReportRecord) => sum + record.count, 0);
+        const totalMessages = report.records.reduce((sum: number, record: ReportRecord) => sum + Number(record.count), 0);
         const spfPassCount = report.records
           .filter((record: ReportRecord) => record.spf === 'pass')
-          .reduce((sum: number, record: ReportRecord) => sum + record.count, 0);
+          .reduce((sum: number, record: ReportRecord) => sum + Number(record.count), 0);
         const dkimPassCount = report.records
           .filter((record: ReportRecord) => record.dkim === 'pass')
-          .reduce((sum: number, record: ReportRecord) => sum + record.count, 0);
+          .reduce((sum: number, record: ReportRecord) => sum + Number(record.count), 0);
 
         // Determine primary policy action (most common disposition)
         const dispositionCounts = report.records.reduce((acc: Record<string, number>, record: ReportRecord) => {
-          acc[record.disposition] = (acc[record.disposition] || 0) + record.count;
+          acc[record.disposition] = (acc[record.disposition] || 0) + Number(record.count);
           return acc;
         }, {} as Record<string, number>);
 
