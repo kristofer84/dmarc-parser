@@ -51,22 +51,29 @@ export interface DmarcRecord {
   };
 }
 
+interface ParseOptions {
+  filename?: string;
+  contentType?: string;
+}
+
 export class DmarcParser {
-  async parseXmlReport(xmlContent: Buffer): Promise<DmarcReport> {
+  async parseXmlReport(xmlContent: Buffer, options: ParseOptions = {}): Promise<DmarcReport> {
     try {
       // Try to decompress if it's gzipped
       let content = xmlContent;
-      
+
       // Check if content is gzipped (starts with 1f 8b)
-      if (xmlContent[0] === 0x1f && xmlContent[1] === 0x8b) {
+      if (this.isGzip(xmlContent)) {
         console.log('🔄 Decompressing gzipped XML content...');
         content = await this.decompressGzip(xmlContent);
-      }
-      
-      // Check if content is zipped (starts with PK)
-      if (xmlContent[0] === 0x50 && xmlContent[1] === 0x4b) {
+      } else if (this.isZip(xmlContent)) {
         console.log('🔄 Extracting XML from ZIP file...');
         content = await this.extractFromZip(xmlContent);
+      } else {
+        const decompressed = await this.tryDecompressGzip(xmlContent, options);
+        if (decompressed) {
+          content = decompressed;
+        }
       }
 
       const xmlString = content.toString('utf-8');
@@ -76,6 +83,14 @@ export class DmarcParser {
     } catch (error) {
       throw new Error(`Failed to parse DMARC XML: ${error}`);
     }
+  }
+
+  private isGzip(content: Buffer): boolean {
+    return content.length > 2 && content[0] === 0x1f && content[1] === 0x8b;
+  }
+
+  private isZip(content: Buffer): boolean {
+    return content.length > 4 && content[0] === 0x50 && content[1] === 0x4b;
   }
 
   private async decompressGzip(content: Buffer): Promise<Buffer> {
@@ -88,6 +103,46 @@ export class DmarcParser {
         resolve(result);
       });
     });
+  }
+
+  private async tryDecompressGzip(content: Buffer, options: ParseOptions): Promise<Buffer | null> {
+    const shouldAttempt = this.shouldAttemptGzipFallback(content, options);
+
+    if (!shouldAttempt) {
+      return null;
+    }
+
+    try {
+      console.log('🔄 Attempting gzip decompression based on metadata...');
+      return await this.decompressGzip(content);
+    } catch (error) {
+      console.warn('⚠️ Gzip fallback decompression failed:', error);
+      return null;
+    }
+  }
+
+  private shouldAttemptGzipFallback(content: Buffer, options: ParseOptions): boolean {
+    const filename = options.filename?.toLowerCase() || '';
+    const contentType = options.contentType?.toLowerCase() || '';
+
+    if (filename.endsWith('.gz') || contentType.includes('gzip')) {
+      return true;
+    }
+
+    if (!this.looksLikeXml(content)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private looksLikeXml(content: Buffer): boolean {
+    if (content.length === 0) {
+      return false;
+    }
+
+    const preview = content.slice(0, 100).toString('utf-8').trimStart();
+    return preview.startsWith('<');
   }
 
   private async extractFromZip(content: Buffer): Promise<Buffer> {
@@ -446,7 +501,7 @@ export class DmarcParser {
     };
   }
 
-  async parseAndValidate(xmlContent: Buffer): Promise<{
+  async parseAndValidate(xmlContent: Buffer, options: ParseOptions = {}): Promise<{
     reportData: {
       domain: string;
       reportId: string;
@@ -468,7 +523,7 @@ export class DmarcParser {
       console.log('🔄 Parsing DMARC XML report...');
       
       // Parse the XML
-      const report = await this.parseXmlReport(xmlContent);
+      const report = await this.parseXmlReport(xmlContent, options);
       
       // Validate the parsed data
       this.validateReport(report);
