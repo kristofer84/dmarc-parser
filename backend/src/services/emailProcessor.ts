@@ -110,8 +110,10 @@ export class EmailProcessor {
     // Process each attachment
     for (const attachment of message.attachments) {
       try {
-        await this.processAttachment(attachment, message, result);
-        hasSuccessfulAttachment = true;
+        const attachmentResult = await this.processAttachment(attachment, message, result);
+        if (attachmentResult === 'success' || attachmentResult === 'skipped') {
+          hasSuccessfulAttachment = true;
+        }
       } catch (error) {
         console.error(`❌ Failed to process attachment ${attachment.filename}:`, error);
         result.errors++;
@@ -125,7 +127,11 @@ export class EmailProcessor {
     return hasSuccessfulAttachment;
   }
 
-  private async processAttachment(attachment: EmailAttachment, message: EmailMessage, result: ProcessingResult): Promise<void> {
+  private async processAttachment(
+    attachment: EmailAttachment,
+    message: EmailMessage,
+    result: ProcessingResult,
+  ): Promise<'success' | 'skipped'> {
     await this.createProcessingLog({
       message,
       attachment,
@@ -160,7 +166,7 @@ export class EmailProcessor {
           message: `Report ${reportData.reportId} already exists`,
           reportId: reportData.reportId,
         });
-        return;
+        return 'skipped';
       }
 
       // Store the report in database
@@ -180,7 +186,7 @@ export class EmailProcessor {
         message: `Successfully processed report for ${reportData.domain} from ${reportData.orgName}`,
         reportId: savedReport.id,
       });
-
+      return 'success';
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       await this.createProcessingLog({
