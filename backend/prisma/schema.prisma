@@ -20,9 +20,10 @@ model Report {
   endDate         DateTime
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  
+
   records         Record[]
-  
+  processingLogs  ProcessingLog[]
+
   @@map("reports")
 }
 
@@ -35,8 +36,23 @@ model Record {
   dkim            String   // pass, fail
   spf             String   // pass, fail
   headerFrom      String
-  
+
   report          Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  
+
   @@map("records")
+}
+
+model ProcessingLog {
+  id              String    @id @default(cuid())
+  createdAt       DateTime  @default(now())
+  messageUid      Int?
+  attachmentName  String?
+  status          String
+  details         String?
+  reportId        String?
+  report          Report?   @relation(fields: [reportId], references: [id])
+
+  @@index([createdAt])
+  @@index([status])
+  @@map("processing_logs")
 }

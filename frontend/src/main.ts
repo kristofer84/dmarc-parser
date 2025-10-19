@@ -6,6 +6,7 @@ import './style.css'
 // Import views
 import DashboardView from './views/DashboardView.vue'
 import ReportListView from './views/ReportListView.vue'
+import ProcessingLogsView from './views/ProcessingLogsView.vue'
 
 // Create router
 const router = createRouter({
@@ -20,6 +21,11 @@ const router = createRouter({
       path: '/reports',
       name: 'Reports',
       component: ReportListView,
+    },
+    {
+      path: '/processing-logs',
+      name: 'ProcessingLogs',
+      component: ProcessingLogsView,
     },
     {
       path: '/reports/:id',

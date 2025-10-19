@@ -82,3 +82,29 @@ export interface ReportsFilters {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }
+
+export type ProcessingStatus = 'started' | 'success' | 'skipped' | 'error';
+
+export interface ProcessingLogEntry {
+  id: string;
+  createdAt: string;
+  messageUid: number | null;
+  attachmentName: string | null;
+  status: ProcessingStatus;
+  details: string | null;
+  reportId: string | null;
+  report: {
+    id: string;
+    domain: string;
+    orgName: string;
+  } | null;
+}
+
+export interface ProcessingLogFilters {
+  page?: number;
+  limit?: number;
+  status?: ProcessingStatus;
+  search?: string;
+  sortBy?: 'createdAt' | 'status' | 'attachmentName' | 'messageUid';
+  sortOrder?: 'asc' | 'desc';
+}

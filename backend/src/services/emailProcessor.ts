@@ -1,4 +1,4 @@
-import { ImapClient, EmailMessage } from './imapClient.js';
+import { ImapClient, EmailMessage, EmailAttachment } from './imapClient.js';
 import { DmarcParser } from './dmarcParser.js';
 import { prisma } from '../db/prisma.js';
 
@@ -110,7 +110,7 @@ export class EmailProcessor {
     // Process each attachment
     for (const attachment of message.attachments) {
       try {
-        await this.processAttachment(attachment.content, message, result);
+        await this.processAttachment(attachment, message, result);
         hasSuccessfulAttachment = true;
       } catch (error) {
         console.error(`❌ Failed to process attachment ${attachment.filename}:`, error);
@@ -125,10 +125,20 @@ export class EmailProcessor {
     return hasSuccessfulAttachment;
   }
 
-  private async processAttachment(xmlContent: Buffer, message: EmailMessage, result: ProcessingResult): Promise<void> {
+  private async processAttachment(attachment: EmailAttachment, message: EmailMessage, result: ProcessingResult): Promise<void> {
+    await this.createProcessingLog({
+      message,
+      attachment,
+      status: 'started',
+      details: `Processing attachment ${attachment.filename}`,
+    });
+
     try {
       // Parse and validate the DMARC report
-      const { reportData, records } = await this.dmarcParser.parseAndValidate(xmlContent);
+      const { reportData, records } = await this.dmarcParser.parseAndValidate(attachment.content, {
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+      });
 
       // Check if report already exists
       const existingReport = await prisma.report.findUnique({
@@ -137,6 +147,13 @@ export class EmailProcessor {
 
       if (existingReport) {
         console.log(`⏭️ Report ${reportData.reportId} already exists, skipping`);
+        await this.createProcessingLog({
+          message,
+          attachment,
+          status: 'skipped',
+          details: `Report ${reportData.reportId} already exists`,
+          reportId: existingReport.id,
+        });
         result.skipped++;
         result.details.push({
           status: 'skipped',
@@ -150,6 +167,13 @@ export class EmailProcessor {
       const savedReport = await this.storeReport(reportData, records);
 
       console.log(`✅ Stored report ${savedReport.id} for domain ${reportData.domain}`);
+      await this.createProcessingLog({
+        message,
+        attachment,
+        status: 'success',
+        details: `Stored report ${savedReport.id} for domain ${reportData.domain}`,
+        reportId: savedReport.id,
+      });
       result.processed++;
       result.details.push({
         status: 'success',
@@ -158,7 +182,36 @@ export class EmailProcessor {
       });
 
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await this.createProcessingLog({
+        message,
+        attachment,
+        status: 'error',
+        details: `DMARC processing failed: ${errorMessage}`,
+      });
       throw new Error(`DMARC processing failed: ${error}`);
+    }
+  }
+
+  private async createProcessingLog(params: {
+    message: EmailMessage;
+    attachment: EmailAttachment;
+    status: 'started' | 'success' | 'skipped' | 'error';
+    details?: string;
+    reportId?: string;
+  }): Promise<void> {
+    try {
+      await prisma.processingLog.create({
+        data: {
+          messageUid: params.message.uid,
+          attachmentName: params.attachment.filename,
+          status: params.status,
+          details: params.details,
+          reportId: params.reportId,
+        },
+      });
+    } catch (error) {
+      console.error('⚠️ Failed to create processing log entry:', error);
     }
   }
 

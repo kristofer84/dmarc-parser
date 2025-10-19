@@ -1,11 +1,14 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import type { 
-  ReportSummary, 
-  DetailedReport, 
-  DashboardStats, 
-  PaginatedResponse, 
+import type {
+  ReportSummary,
+  DetailedReport,
+  DashboardStats,
+  PaginatedResponse,
   ApiError,
-  ReportsFilters 
+  ReportsFilters,
+  ProcessingLogEntry,
+  ProcessingLogFilters,
+  ProcessingStatus,
 } from '@/types/api';
 
 class ApiClient {
@@ -91,6 +94,41 @@ class ApiClient {
     return response.data;
   }
 
+  async getProcessingLogs(
+    filters: ProcessingLogFilters = {}
+  ): Promise<PaginatedResponse<ProcessingLogEntry>> {
+    const params = new URLSearchParams();
+
+    const validStatuses: ProcessingStatus[] = ['started', 'success', 'skipped', 'error'];
+
+    if (filters.page) params.append('page', filters.page.toString());
+    if (filters.limit) params.append('limit', filters.limit.toString());
+    if (filters.sortBy) params.append('sortBy', filters.sortBy);
+    if (filters.sortOrder) params.append('sortOrder', filters.sortOrder);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.status) {
+      if (!validStatuses.includes(filters.status)) {
+        throw new Error('Invalid processing log status filter');
+      }
+      params.append('status', filters.status);
+    }
+
+    const response = await this.client.get<PaginatedResponse<ProcessingLogEntry>>(
+      '/processing-logs',
+      {
+        params: Object.fromEntries(params),
+      }
+    );
+
+    return {
+      data: response.data.data.map(log => ({
+        ...log,
+        status: log.status as ProcessingStatus,
+      })),
+      pagination: response.data.pagination,
+    };
+  }
+
   // Health check
   async healthCheck(): Promise<{ status: string; timestamp: string; uptime: number }> {
     // Use absolute URL to bypass the /api base URL
@@ -115,6 +153,10 @@ export const reportsApi = {
 
 export const summaryApi = {
   getSummary: () => apiClient.getSummary(),
+};
+
+export const processingLogsApi = {
+  getProcessingLogs: (filters?: ProcessingLogFilters) => apiClient.getProcessingLogs(filters),
 };
 
 export const healthApi = {

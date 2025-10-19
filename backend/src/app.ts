@@ -3,6 +3,7 @@ import cors from 'cors';
 import { config } from './config/env.js';
 import reportsRouter from './routes/reports.js';
 import summaryRouter from './routes/summary.js';
+import processingLogsRouter from './routes/processingLogs.js';
 
 export interface ErrorResponse {
   error: {
@@ -60,6 +61,7 @@ export function createApp(): express.Application {
   // API routes
   app.use('/api/reports', reportsRouter);
   app.use('/api/summary', summaryRouter);
+  app.use('/api/processing-logs', processingLogsRouter);
 
   // 404 handler
   app.use('*', (req, res) => {
