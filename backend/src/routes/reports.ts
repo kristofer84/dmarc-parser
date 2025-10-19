@@ -39,7 +39,7 @@ export interface DetailedReport extends ReportSummary {
 router.get('/',
   rateLimit(50, 60000), // 50 requests per minute
   validatePagination,
-  validateSorting(['domain', 'orgName', 'startDate', 'endDate', 'createdAt']),
+  validateSorting(['domain', 'orgName', 'startDate', 'endDate', 'createdAt', 'totalMessages', 'spfPassRate', 'dkimPassRate', 'policyAction']),
   validateQueryString,
   async (req, res, next) => {
     try {
@@ -54,23 +54,42 @@ router.get('/',
 
       // Build WHERE conditions for case-insensitive search
       let whereClause = '';
+      let whereClauseWithAlias = '';
       const queryParams: any[] = [];
 
       if (domain && orgName) {
         whereClause = 'WHERE LOWER(domain) LIKE LOWER(?) AND LOWER(orgName) LIKE LOWER(?)';
+        whereClauseWithAlias = 'WHERE LOWER(r.domain) LIKE LOWER(?) AND LOWER(r.orgName) LIKE LOWER(?)';
         queryParams.push(`%${domain}%`, `%${orgName}%`);
       } else if (domain) {
         whereClause = 'WHERE LOWER(domain) LIKE LOWER(?)';
+        whereClauseWithAlias = 'WHERE LOWER(r.domain) LIKE LOWER(?)';
         queryParams.push(`%${domain}%`);
       } else if (orgName) {
         whereClause = 'WHERE LOWER(orgName) LIKE LOWER(?)';
+        whereClauseWithAlias = 'WHERE LOWER(r.orgName) LIKE LOWER(?)';
         queryParams.push(`%${orgName}%`);
       }
 
       // Build ORDER BY clause
-      const validSortFields = ['domain', 'orgName', 'startDate', 'endDate', 'createdAt'];
+      const validSortFields = ['domain', 'orgName', 'startDate', 'endDate', 'createdAt', 'totalMessages', 'spfPassRate', 'dkimPassRate', 'policyAction'];
       const sortField = validSortFields.includes(sortBy) ? sortBy : 'startDate';
       const sortDirection = sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+      const orderClause = (() => {
+        switch (sortField) {
+          case 'totalMessages':
+            return `ORDER BY totalMessages ${sortDirection}`;
+          case 'spfPassRate':
+            return `ORDER BY CASE WHEN totalMessages = 0 THEN 0 ELSE ROUND((spfPassCount * 100.0) / totalMessages) END ${sortDirection}`;
+          case 'dkimPassRate':
+            return `ORDER BY CASE WHEN totalMessages = 0 THEN 0 ELSE ROUND((dkimPassCount * 100.0) / totalMessages) END ${sortDirection}`;
+          case 'policyAction':
+            return `ORDER BY primaryDisposition ${sortDirection}`;
+          default:
+            return `ORDER BY r.${sortField} ${sortDirection}`;
+        }
+      })();
 
       // Define types for raw query results
       interface RawReport {
@@ -83,30 +102,32 @@ router.get('/',
         endDate: string;
         createdAt: string;
         updatedAt: string;
-      }
-
-      interface ReportRecord {
-        id: string;
-        reportId: string;
-        sourceIp: string;
-        count: number | bigint;
-        disposition: string;
-        dkim: string;
-        spf: string;
-        headerFrom: string;
-      }
-
-      interface ReportWithRecords extends RawReport {
-        records: ReportRecord[];
+        totalMessages: number | bigint | null;
+        spfPassCount: number | bigint | null;
+        dkimPassCount: number | bigint | null;
+        primaryDisposition: string | null;
       }
 
       // Get reports with case-insensitive filtering using raw SQL
       const reportsQuery = `
-      SELECT * FROM reports 
-      ${whereClause}
-      ORDER BY ${sortField} ${sortDirection}
-      LIMIT ? OFFSET ?
-    `;
+        SELECT
+          r.*, 
+          COALESCE((SELECT SUM(count) FROM records WHERE reportId = r.id), 0) AS totalMessages,
+          COALESCE((SELECT SUM(count) FROM records WHERE reportId = r.id AND spf = 'pass'), 0) AS spfPassCount,
+          COALESCE((SELECT SUM(count) FROM records WHERE reportId = r.id AND dkim = 'pass'), 0) AS dkimPassCount,
+          COALESCE((
+            SELECT disposition
+            FROM records
+            WHERE reportId = r.id
+            GROUP BY disposition
+            ORDER BY SUM(count) DESC, disposition ASC
+            LIMIT 1
+          ), 'none') AS primaryDisposition
+        FROM reports r
+        ${whereClauseWithAlias}
+        ${orderClause}
+        LIMIT ? OFFSET ?
+      `;
 
       const reports = await prisma.$queryRawUnsafe(
         reportsQuery,
@@ -114,16 +135,6 @@ router.get('/',
         limit,
         offset
       ) as RawReport[];
-
-      // Get records for each report
-      const reportsWithRecords: ReportWithRecords[] = await Promise.all(
-        reports.map(async (report) => {
-          const records = await prisma.record.findMany({
-            where: { reportId: report.id },
-          });
-          return { ...report, records };
-        })
-      );
 
       // Get total count for pagination
       const countQuery = `SELECT COUNT(*) as count FROM reports ${whereClause}`;
@@ -134,23 +145,10 @@ router.get('/',
       const totalCount = Number(totalCountResult[0].count);
 
       // Transform to API format
-      const reportSummaries: ReportSummary[] = reportsWithRecords.map((report: ReportWithRecords) => {
-        const totalMessages = report.records.reduce((sum: number, record: ReportRecord) => sum + Number(record.count), 0);
-        const spfPassCount = report.records
-          .filter((record: ReportRecord) => record.spf === 'pass')
-          .reduce((sum: number, record: ReportRecord) => sum + Number(record.count), 0);
-        const dkimPassCount = report.records
-          .filter((record: ReportRecord) => record.dkim === 'pass')
-          .reduce((sum: number, record: ReportRecord) => sum + Number(record.count), 0);
-
-        // Determine primary policy action (most common disposition)
-        const dispositionCounts = report.records.reduce((acc: Record<string, number>, record: ReportRecord) => {
-          acc[record.disposition] = (acc[record.disposition] || 0) + Number(record.count);
-          return acc;
-        }, {} as Record<string, number>);
-
-        const primaryDisposition = Object.entries(dispositionCounts)
-          .sort(([, a], [, b]) => (b as number) - (a as number))[0]?.[0] || 'none';
+      const reportSummaries: ReportSummary[] = reports.map((report: RawReport) => {
+        const totalMessages = Number(report.totalMessages ?? 0);
+        const spfPassCount = Number(report.spfPassCount ?? 0);
+        const dkimPassCount = Number(report.dkimPassCount ?? 0);
 
         return {
           id: report.id,
@@ -161,7 +159,7 @@ router.get('/',
           totalMessages,
           spfPassRate: totalMessages > 0 ? Math.round((spfPassCount / totalMessages) * 100) : 0,
           dkimPassRate: totalMessages > 0 ? Math.round((dkimPassCount / totalMessages) * 100) : 0,
-          policyAction: primaryDisposition,
+          policyAction: report.primaryDisposition || 'none',
         };
       });
 

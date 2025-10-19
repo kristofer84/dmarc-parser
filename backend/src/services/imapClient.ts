@@ -22,6 +22,8 @@ export class ImapClient {
   private retryCount = 0;
   private maxRetries = 3;
   private retryDelay = 1000; // Start with 1 second
+  private readonly archiveMailbox = 'dmarc-archive';
+  private archiveMailboxVerified = false;
 
   constructor() {
     this.imap = new Imap({
@@ -334,10 +336,101 @@ export class ImapClient {
           reject(new Error(`Failed to mark messages as read: ${err.message}`));
           return;
         }
-        
+
         console.log(`✅ Marked ${messageUids.length} messages as read`);
         resolve();
       });
+    });
+  }
+
+  private mailboxExists(boxes: Imap.MailBoxes, mailboxName: string): boolean {
+    return Object.entries(boxes).some(([name, box]) => {
+      if (name.toLowerCase() === mailboxName.toLowerCase()) {
+        return true;
+      }
+
+      if (box.children) {
+        return this.mailboxExists(box.children, mailboxName);
+      }
+
+      return false;
+    });
+  }
+
+  private async ensureArchiveMailbox(): Promise<void> {
+    if (this.archiveMailboxVerified) {
+      return;
+    }
+
+    if (!this.connected) {
+      throw new Error('IMAP client not connected');
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      this.imap.getBoxes((err, boxes) => {
+        if (err) {
+          reject(new Error(`Failed to retrieve mailboxes: ${err.message}`));
+          return;
+        }
+
+        if (this.mailboxExists(boxes, this.archiveMailbox)) {
+          this.archiveMailboxVerified = true;
+          resolve();
+          return;
+        }
+
+        this.imap.addBox(this.archiveMailbox, addErr => {
+          if (addErr) {
+            const message = addErr.message || '';
+            if (message.toLowerCase().includes('exist')) {
+              // Mailbox already exists - treat as success
+              this.archiveMailboxVerified = true;
+              resolve();
+              return;
+            }
+
+            reject(new Error(`Failed to create archive mailbox: ${addErr.message}`));
+            return;
+          }
+
+          console.log(`📁 Created archive mailbox "${this.archiveMailbox}"`);
+          this.archiveMailboxVerified = true;
+          resolve();
+        });
+      });
+    });
+  }
+
+  async moveMessagesToArchive(messageUids: number[]): Promise<void> {
+    if (messageUids.length === 0) {
+      console.log('📭 No message UIDs provided to archive');
+      return;
+    }
+
+    if (!this.connected) {
+      console.error('❌ Cannot move messages to archive: IMAP client not connected');
+      return;
+    }
+
+    try {
+      await this.ensureArchiveMailbox();
+    } catch (error) {
+      console.error('❌ Failed to ensure archive mailbox exists:', error);
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      this.imap.move(messageUids, this.archiveMailbox, err => {
+        if (err) {
+          reject(new Error(`Failed to move messages to ${this.archiveMailbox}: ${err.message}`));
+          return;
+        }
+
+        console.log(`📁 Moved ${messageUids.length} messages to ${this.archiveMailbox}`);
+        resolve();
+      });
+    }).catch(error => {
+      console.error('❌ Failed to move processed messages to archive:', error);
     });
   }
 

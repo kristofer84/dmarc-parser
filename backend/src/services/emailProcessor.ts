@@ -78,6 +78,8 @@ export class EmailProcessor {
       if (successfullyProcessedUids.length > 0) {
         console.log(`📧 Attempting to mark ${successfullyProcessedUids.length} messages as read: [${successfullyProcessedUids.join(', ')}]`);
         await this.imapClient.markProcessedMessagesAsRead(successfullyProcessedUids);
+        console.log(`📁 Attempting to archive ${successfullyProcessedUids.length} processed messages`);
+        await this.imapClient.moveMessagesToArchive(successfullyProcessedUids);
       } else {
         console.log('📭 No messages were successfully processed, nothing to mark as read');
       }
