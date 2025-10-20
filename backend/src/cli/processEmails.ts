@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
+import { setupLogging } from '../utils/logger.js';
 import { EmailProcessor } from '../services/emailProcessor.js';
 import { initializeDatabase, disconnectDatabase } from '../db/prisma.js';
+
+setupLogging();
 
 async function main() {
   try {

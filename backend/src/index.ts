@@ -1,7 +1,10 @@
+import { setupLogging } from './utils/logger.js';
 import { createApp } from './app.js';
 import { config } from './config/env.js';
 import { initializeDatabase, disconnectDatabase } from './db/prisma.js';
 import { EmailProcessor } from './services/emailProcessor.js';
+
+setupLogging();
 
 async function startServer() {
   try {
