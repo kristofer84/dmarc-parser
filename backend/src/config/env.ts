@@ -43,6 +43,9 @@ function validateEnv(): Config {
     throw new Error('PORT must be a valid port number between 1 and 65535');
   }
 
+  const rawNodeEnv = process.env.NODE_ENV || 'development';
+  const normalizedNodeEnv = rawNodeEnv.trim().toLowerCase();
+
   return {
     imap: {
       host: process.env.IMAP_HOST!,
@@ -55,7 +58,7 @@ function validateEnv(): Config {
     },
     server: {
       port: serverPort,
-      nodeEnv: process.env.NODE_ENV || 'development',
+      nodeEnv: normalizedNodeEnv,
     },
   };
 }
