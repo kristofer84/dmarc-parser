@@ -284,15 +284,70 @@ export class ImapClient {
 
   private isDmarcAttachment(attachment: Attachment): boolean {
     const filename = attachment.filename?.toLowerCase() || '';
-    const contentType = attachment.contentType.toLowerCase();
-    
-    // Check for DMARC report indicators
-    return (
-      filename.includes('dmarc') ||
+    const contentType = (attachment.contentType || '').toLowerCase();
+
+    const knownExtensions = [
+      '.xml',
+      '.xml.gz',
+      '.xml.zip',
+      '.zip',
+      '.gz',
+      '.gzip',
+      '.tgz',
+      '.tar.gz',
+    ];
+
+    const hasKnownExtension = knownExtensions.some(ext => filename.endsWith(ext));
+
+    if (hasKnownExtension) {
+      return true;
+    }
+
+    if (
       contentType.includes('xml') ||
       contentType.includes('zip') ||
       contentType.includes('gzip')
-    );
+    ) {
+      return true;
+    }
+
+    if (this.isZipContent(attachment.content) || this.isGzipContent(attachment.content)) {
+      return true;
+    }
+
+    if (this.looksLikeXml(attachment.content)) {
+      return true;
+    }
+
+    const dmarcKeywords = ['dmarc', 'rua', 'aggregate'];
+    return dmarcKeywords.some(keyword => filename.includes(keyword));
+  }
+
+  private isZipContent(content: Buffer | undefined): boolean {
+    if (!content || content.length < 4) {
+      return false;
+    }
+
+    // ZIP files start with "PK" (0x50 0x4b)
+    return content[0] === 0x50 && content[1] === 0x4b;
+  }
+
+  private isGzipContent(content: Buffer | undefined): boolean {
+    if (!content || content.length < 2) {
+      return false;
+    }
+
+    // Gzip files start with 0x1f 0x8b
+    return content[0] === 0x1f && content[1] === 0x8b;
+  }
+
+  private looksLikeXml(content: Buffer | undefined): boolean {
+    if (!content || content.length === 0) {
+      return false;
+    }
+
+    const preview = content.slice(0, 100).toString('utf-8').trimStart();
+    return preview.startsWith('<');
   }
 
   private hasDmarcAttachment(message: EmailMessage): boolean {
