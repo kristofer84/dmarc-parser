@@ -50,13 +50,13 @@ export class ImapClient {
   }
 
   private setupEventHandlers(): void {
-    this.imap.once('ready', () => {
+    this.imap.on('ready', () => {
       console.log('✅ IMAP connection ready');
       this.connected = true;
       this.retryCount = 0; // Reset retry count on successful connection
     });
 
-    this.imap.once('error', (err: Error) => {
+    this.imap.on('error', (err: Error) => {
       console.error('❌ IMAP connection error:', err.message);
       console.error('❌ Error details:', {
         code: (err as any).code,
@@ -67,7 +67,7 @@ export class ImapClient {
       this.connected = false;
     });
 
-    this.imap.once('end', () => {
+    this.imap.on('end', () => {
       console.log('📪 IMAP connection ended');
       this.connected = false;
     });
