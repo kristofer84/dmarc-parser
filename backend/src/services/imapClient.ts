@@ -50,13 +50,13 @@ export class ImapClient {
   }
 
   private setupEventHandlers(): void {
-    this.imap.once('ready', () => {
+    this.imap.on('ready', () => {
       console.log('✅ IMAP connection ready');
       this.connected = true;
       this.retryCount = 0; // Reset retry count on successful connection
     });
 
-    this.imap.once('error', (err: Error) => {
+    this.imap.on('error', (err: Error) => {
       console.error('❌ IMAP connection error:', err.message);
       console.error('❌ Error details:', {
         code: (err as any).code,
@@ -67,7 +67,7 @@ export class ImapClient {
       this.connected = false;
     });
 
-    this.imap.once('end', () => {
+    this.imap.on('end', () => {
       console.log('📪 IMAP connection ended');
       this.connected = false;
     });
@@ -204,6 +204,11 @@ export class ImapClient {
 
         fetch.on('message', (msg, seqno) => {
           let buffer = Buffer.alloc(0);
+          let uid: number | null = null;
+
+          msg.once('attributes', (attrs: Imap.ImapMessageAttributes) => {
+            uid = attrs.uid;
+          });
 
           msg.on('body', (stream) => {
             stream.on('data', (chunk) => {
@@ -214,7 +219,12 @@ export class ImapClient {
           msg.once('end', async () => {
             try {
               const parsed = await simpleParser(buffer);
-              const emailMessage = await this.parseEmailMessage(parsed, seqno);
+              const messageUid = uid ?? seqno;
+              if (uid === null) {
+                console.warn(`⚠️ UID missing for message ${seqno}, falling back to sequence number`);
+              }
+
+              const emailMessage = await this.parseEmailMessage(parsed, messageUid);
               
               // Only include messages with DMARC attachments
               if (this.hasDmarcAttachment(emailMessage)) {
