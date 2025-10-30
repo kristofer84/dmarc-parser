@@ -130,11 +130,50 @@ export class ImapClient {
         return;
       }
 
-      this.imap.once('end', () => {
-        resolve();
-      });
+      const finalize = () => {
+        this.imap.removeListener('end', onEnd);
+        this.imap.removeListener('close', onClose);
+        this.imap.removeListener('error', onError);
+      };
 
-      this.imap.end();
+      const complete = () => {
+        clearTimeout(timeoutId);
+        finalize();
+        resolve();
+      };
+
+      const onEnd = () => {
+        complete();
+      };
+
+      const onClose = () => {
+        if (this.connected) {
+          this.connected = false;
+        }
+        console.log('📪 IMAP connection closed');
+        complete();
+      };
+
+      const onError = (error: Error) => {
+        console.warn('⚠️ IMAP disconnect encountered an error:', error.message);
+        complete();
+      };
+
+      const timeoutId = setTimeout(() => {
+        console.warn('⚠️ IMAP disconnect timeout, continuing shutdown');
+        complete();
+      }, 5000);
+
+      this.imap.once('end', onEnd);
+      this.imap.once('close', onClose);
+      this.imap.once('error', onError);
+
+      try {
+        this.imap.end();
+      } catch (error) {
+        console.warn('⚠️ Failed to end IMAP connection cleanly:', error instanceof Error ? error.message : error);
+        complete();
+      }
     });
   }
 
