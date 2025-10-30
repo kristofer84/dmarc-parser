@@ -273,16 +273,23 @@ export class EmailProcessor {
   }
 
   async scheduleProcessing(intervalMs: number = 300000): Promise<void> {
-    console.log(`⏰ Scheduling email processing every ${intervalMs / 1000} seconds`);
-    
+    const intervalSeconds = Math.round(intervalMs / 1000);
+    const nextRun = new Date(Date.now() + intervalMs);
+
+    console.log(`⏰ Scheduling email processing every ${intervalSeconds} seconds`);
+    console.log(`🗓️ Next scheduled check at ${nextRun.toISOString()}`);
+
     const processInterval = setInterval(async () => {
       try {
         console.log('🔄 Scheduled processing starting...');
         const result = await this.processEmails();
-        
+
         if (result.processed > 0 || result.errors > 0) {
           console.log(`📊 Scheduled processing completed: ${result.processed} processed, ${result.errors} errors`);
         }
+
+        const upcomingRun = new Date(Date.now() + intervalMs);
+        console.log(`🗓️ Next scheduled check at ${upcomingRun.toISOString()}`);
       } catch (error) {
         console.error('❌ Scheduled processing failed:', error);
       }
