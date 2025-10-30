@@ -15,6 +15,8 @@ interface Config {
   server: {
     port: number;
     nodeEnv: string;
+    enableScheduledProcessing: boolean;
+    scheduledProcessingIntervalMs: number;
   };
 }
 
@@ -46,6 +48,21 @@ function validateEnv(): Config {
   const rawNodeEnv = process.env.NODE_ENV || 'development';
   const normalizedNodeEnv = rawNodeEnv.trim().toLowerCase();
 
+  const rawSchedulerPreference = process.env.ENABLE_SCHEDULED_EMAIL_PROCESSING?.trim().toLowerCase();
+  const schedulerIntervalEnv = process.env.EMAIL_PROCESSING_INTERVAL_MS?.trim();
+
+  const schedulerIntervalMs = schedulerIntervalEnv ? parseInt(schedulerIntervalEnv, 10) : 300000;
+
+  if (Number.isNaN(schedulerIntervalMs) || schedulerIntervalMs <= 0) {
+    throw new Error('EMAIL_PROCESSING_INTERVAL_MS must be a positive integer');
+  }
+
+  const enableScheduledProcessing = rawSchedulerPreference === 'true'
+    ? true
+    : rawSchedulerPreference === 'false'
+      ? false
+      : true;
+
   return {
     imap: {
       host: process.env.IMAP_HOST!,
@@ -59,6 +76,8 @@ function validateEnv(): Config {
     server: {
       port: serverPort,
       nodeEnv: normalizedNodeEnv,
+      enableScheduledProcessing,
+      scheduledProcessingIntervalMs: schedulerIntervalMs,
     },
   };
 }

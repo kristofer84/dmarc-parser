@@ -44,13 +44,21 @@ async function startServer() {
       console.warn('⚠️ Initial email processing failed (this is normal if IMAP credentials are not configured):', error);
     }
 
-    // Schedule periodic email processing (every 5 minutes)
-    if (config.server.nodeEnv === 'production') {
+    const schedulerPreference = process.env.ENABLE_SCHEDULED_EMAIL_PROCESSING?.trim().toLowerCase();
+    const schedulerEnabled = config.server.enableScheduledProcessing;
+    const schedulerIntervalMs = config.server.scheduledProcessingIntervalMs;
+
+    if (schedulerEnabled) {
       console.log('⏰ Starting scheduled email processing...');
-      emailProcessor.scheduleProcessing(300000); // 5 minutes
+      emailProcessor.scheduleProcessing(schedulerIntervalMs);
+      console.log(`⏲️ Email processing interval: ${Math.round(schedulerIntervalMs / 1000)} seconds`);
     } else {
-      console.log('⏰ Scheduled processing disabled in development mode');
-      console.log('💡 To process emails manually, you can call the email processor service');
+      const disabledReason = schedulerPreference === 'false'
+        ? 'via ENABLE_SCHEDULED_EMAIL_PROCESSING=false'
+        : 'because automatic scheduling is disabled by default for this environment';
+      console.log(`⏰ Scheduled processing disabled ${disabledReason}`);
+      console.log('💡 To enable automatic checks, set ENABLE_SCHEDULED_EMAIL_PROCESSING=true');
+      console.log('💡 You can still process emails manually using the CLI or service methods');
     }
 
     // Graceful shutdown handling

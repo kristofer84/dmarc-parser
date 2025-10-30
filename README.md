@@ -215,6 +215,12 @@ DATABASE_URL=file:./data.db
 # Server
 PORT=3000
 NODE_ENV=development
+
+# Email processing scheduler
+# Set to "false" to keep automatic checks off in development.
+# Omit or set to "true" in production to enable scheduled polling.
+ENABLE_SCHEDULED_EMAIL_PROCESSING=false
+# EMAIL_PROCESSING_INTERVAL_MS=300000
 ```
 
 #### Frontend (.env)
