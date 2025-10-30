@@ -47,6 +47,13 @@ async function startServer() {
     const schedulerPreference = process.env.ENABLE_SCHEDULED_EMAIL_PROCESSING?.trim().toLowerCase();
     const schedulerEnabled = config.server.enableScheduledProcessing;
     const schedulerIntervalMs = config.server.scheduledProcessingIntervalMs;
+    const schedulerPreferenceDescription = schedulerPreference === undefined
+      ? 'not set (using default behaviour)'
+      : `set to "${schedulerPreference}"`;
+
+    console.log(
+      `🗓️ Scheduled email processing at startup: ${schedulerEnabled ? 'ENABLED' : 'DISABLED'} (${schedulerPreferenceDescription})`,
+    );
 
     if (schedulerEnabled) {
       console.log('⏰ Starting scheduled email processing...');
