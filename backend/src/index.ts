@@ -33,7 +33,15 @@ async function startServer() {
     });
 
     // Initialize email processor
-    const emailProcessor = new EmailProcessor();
+    console.log('🛠️ Initializing email processor...');
+    let emailProcessor: EmailProcessor;
+    try {
+      emailProcessor = new EmailProcessor();
+      console.log('✅ Email processor initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize email processor:', error);
+      throw error;
+    }
     
     // Run initial email processing
     console.log('🔄 Running initial email processing...');
