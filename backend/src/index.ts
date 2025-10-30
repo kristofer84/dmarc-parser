@@ -32,9 +32,43 @@ async function startServer() {
       console.log(`   - GET /api/summary`);
     });
 
-    // Initialize email processor
-    const emailProcessor = new EmailProcessor();
-    
+    const schedulerPreference = process.env.ENABLE_SCHEDULED_EMAIL_PROCESSING?.trim().toLowerCase();
+    const schedulerEnabled = config.server.enableScheduledProcessing;
+    const schedulerIntervalMs = config.server.scheduledProcessingIntervalMs;
+    const schedulerIntervalSeconds = Math.round(schedulerIntervalMs / 1000);
+    const schedulerPreferenceDescription = schedulerPreference === undefined
+      ? 'not set (using default behaviour)'
+      : `set to "${schedulerPreference}"`;
+
+    console.log('⚙️ Initializing email processor service...');
+    let emailProcessor: EmailProcessor;
+    try {
+      emailProcessor = new EmailProcessor();
+      console.log('✅ Email processor ready');
+    } catch (error) {
+      console.error('❌ Failed to initialize email processor:', error);
+      throw error;
+    }
+
+    if (schedulerEnabled) {
+      console.log(
+        `🗓️ Scheduled email processing at startup: ENABLED (${schedulerPreferenceDescription})`,
+      );
+      console.log(
+        `⏳ Scheduled checks will start after the initial email processing completes (interval ${schedulerIntervalSeconds} seconds).`,
+      );
+    } else {
+      const disabledReason = schedulerPreference === 'false'
+        ? 'via ENABLE_SCHEDULED_EMAIL_PROCESSING=false'
+        : 'because automatic scheduling is disabled by default for this environment';
+      console.log(
+        `🗓️ Scheduled email processing at startup: DISABLED (${schedulerPreferenceDescription})`,
+      );
+      console.log(`⏰ Scheduled processing disabled ${disabledReason}`);
+      console.log('💡 To enable automatic checks, set ENABLE_SCHEDULED_EMAIL_PROCESSING=true');
+      console.log('💡 You can still process emails manually using the CLI or service methods');
+    }
+
     // Run initial email processing
     console.log('🔄 Running initial email processing...');
     try {
@@ -44,21 +78,10 @@ async function startServer() {
       console.warn('⚠️ Initial email processing failed (this is normal if IMAP credentials are not configured):', error);
     }
 
-    const schedulerPreference = process.env.ENABLE_SCHEDULED_EMAIL_PROCESSING?.trim().toLowerCase();
-    const schedulerEnabled = config.server.enableScheduledProcessing;
-    const schedulerIntervalMs = config.server.scheduledProcessingIntervalMs;
-
     if (schedulerEnabled) {
       console.log('⏰ Starting scheduled email processing...');
       emailProcessor.scheduleProcessing(schedulerIntervalMs);
-      console.log(`⏲️ Email processing interval: ${Math.round(schedulerIntervalMs / 1000)} seconds`);
-    } else {
-      const disabledReason = schedulerPreference === 'false'
-        ? 'via ENABLE_SCHEDULED_EMAIL_PROCESSING=false'
-        : 'because automatic scheduling is disabled by default for this environment';
-      console.log(`⏰ Scheduled processing disabled ${disabledReason}`);
-      console.log('💡 To enable automatic checks, set ENABLE_SCHEDULED_EMAIL_PROCESSING=true');
-      console.log('💡 You can still process emails manually using the CLI or service methods');
+      console.log(`⏲️ Email processing interval: ${schedulerIntervalSeconds} seconds`);
     }
 
     // Graceful shutdown handling
