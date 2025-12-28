@@ -223,6 +223,9 @@ export class ImapClient {
         let messageIds: number[];
         if (limit) {
           messageIds = results.slice(-limit);
+          if (results.length > limit) {
+            console.log(`⚠️ Limiting to last ${limit} messages (${results.length - limit} messages will be skipped)`);
+          }
         } else if (includeRead) {
           // For first run, get all messages (no limit)
           messageIds = results;
@@ -230,6 +233,10 @@ export class ImapClient {
         } else {
           // For regular runs, limit to last 50 messages
           messageIds = results.slice(-50);
+          if (results.length > 50) {
+            console.log(`⚠️ Limiting to last 50 unread messages (${results.length - 50} older messages will be skipped)`);
+            console.log(`💡 Tip: To process all messages, run with includeRead=true (first run only)`);
+          }
         }
         
         const fetch = this.imap.fetch(messageIds, {
@@ -268,6 +275,10 @@ export class ImapClient {
               // Only include messages with DMARC attachments
               if (this.hasDmarcAttachment(emailMessage)) {
                 messages.push(emailMessage);
+                console.log(`  ✅ Message ${messageUid} included (has ${emailMessage.attachments.length} DMARC attachment(s))`);
+              } else {
+                console.log(`  ⏭️ Message ${messageUid} filtered out (no DMARC attachments found)`);
+                console.log(`     From: ${emailMessage.from}, Subject: ${emailMessage.subject}`);
               }
               
               processedCount++;
@@ -301,13 +312,37 @@ export class ImapClient {
     const attachments: EmailAttachment[] = [];
 
     if (parsed.attachments) {
+      console.log(`📎 Found ${parsed.attachments.length} attachment(s) in message ${uid}`);
       for (const attachment of parsed.attachments) {
+        const filename = attachment.filename || 'unknown';
+        const contentType = attachment.contentType || 'unknown';
+        let content = attachment.content;
+        console.log(`  - Attachment: ${filename}, Content-Type: ${contentType}, Size: ${content?.length || 0} bytes`);
+        
         if (this.isDmarcAttachment(attachment)) {
+          console.log(`  ✅ Recognized as DMARC attachment: ${filename}`);
+          
+          // Try to decode base64 if content looks like base64 text
+          // This is a fallback in case mailparser didn't decode it properly
+          if (content && this.looksLikeBase64Text(content)) {
+            try {
+              const decoded = Buffer.from(content.toString('utf-8').trim(), 'base64');
+              if (decoded.length > 0) {
+                console.log(`  🔄 Decoded base64 content (${content.length} -> ${decoded.length} bytes)`);
+                content = decoded;
+              }
+            } catch (e) {
+              console.warn(`  ⚠️ Failed to decode base64 content: ${e}`);
+            }
+          }
+          
           attachments.push({
-            filename: attachment.filename || 'unknown',
-            contentType: attachment.contentType,
-            content: attachment.content,
+            filename: filename,
+            contentType: contentType,
+            content: content,
           });
+        } else {
+          console.log(`  ⏭️ Skipped attachment: ${filename} (not recognized as DMARC report)`);
         }
       }
     }
@@ -324,6 +359,11 @@ export class ImapClient {
   private isDmarcAttachment(attachment: Attachment): boolean {
     const filename = attachment.filename?.toLowerCase() || '';
     const contentType = (attachment.contentType || '').toLowerCase();
+    let content = attachment.content;
+    
+    if (!content || content.length === 0) {
+      return false;
+    }
 
     const knownExtensions = [
       '.xml',
@@ -338,10 +378,12 @@ export class ImapClient {
 
     const hasKnownExtension = knownExtensions.some(ext => filename.endsWith(ext));
 
+    // If filename has known extension, accept it
     if (hasKnownExtension) {
       return true;
     }
 
+    // Check content type
     if (
       contentType.includes('xml') ||
       contentType.includes('zip') ||
@@ -350,16 +392,66 @@ export class ImapClient {
       return true;
     }
 
-    if (this.isZipContent(attachment.content) || this.isGzipContent(attachment.content)) {
+    // Try to decode base64 if content looks like base64 text but filename suggests binary
+    // This is a fallback in case mailparser didn't decode it properly
+    if (hasKnownExtension && this.looksLikeBase64Text(content)) {
+      try {
+        const decoded = Buffer.from(content.toString('utf-8').trim(), 'base64');
+        if (decoded.length > 0) {
+          content = decoded;
+        }
+      } catch (e) {
+        // Decode failed, continue with original content
+      }
+    }
+
+    // Check content signatures (gzip, zip, xml) - this is the most reliable check
+    // This handles cases where filename or content-type might be missing/incorrect
+    // but the actual content is clearly DMARC data
+    if (this.isZipContent(content) || this.isGzipContent(content)) {
       return true;
     }
 
-    if (this.looksLikeXml(attachment.content)) {
+    if (this.looksLikeXml(content)) {
       return true;
     }
 
+    // Accept application/octet-stream if filename suggests DMARC
+    // This handles cases like: Content-Type: application/octet-stream; Name="report.xml.gz"
+    if (contentType.includes('octet-stream') && hasKnownExtension) {
+      return true;
+    }
+
+    // Check for DMARC-related keywords in filename
     const dmarcKeywords = ['dmarc', 'rua', 'aggregate'];
-    return dmarcKeywords.some(keyword => filename.includes(keyword));
+    if (dmarcKeywords.some(keyword => filename.includes(keyword))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private looksLikeBase64Text(content: Buffer): boolean {
+    if (!content || content.length === 0) {
+      return false;
+    }
+    
+    // Check if content looks like base64 text (not binary)
+    const text = content.toString('utf-8').trim();
+    
+    // Base64 strings are alphanumeric with +, /, and = padding
+    // They should not contain binary bytes or start with XML/gzip/zip signatures
+    if (text.length > 20) {
+      const base64Regex = /^[A-Za-z0-9+/=\s\n\r]+$/;
+      if (base64Regex.test(text) && 
+          !text.trim().startsWith('<') &&
+          content[0] !== 0x1f && // Not gzip
+          content[0] !== 0x50) {  // Not zip
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   private isZipContent(content: Buffer | undefined): boolean {
