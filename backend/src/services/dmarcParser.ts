@@ -367,7 +367,7 @@ export class DmarcParser {
       throw new Error('Invalid report: date range is required');
     }
     
-    if (metadata.dateRange.begin >= metadata.dateRange.end) {
+    if (metadata.dateRange.begin > metadata.dateRange.end) {
       throw new Error('Invalid report: start date must be before end date');
     }
     
