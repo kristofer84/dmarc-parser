@@ -2,19 +2,8 @@
   <div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
     <div class="max-w-md w-full space-y-6">
       <div class="text-center">
-        <div
-          class="mx-auto w-12 h-12 bg-primary-600 rounded-lg flex items-center justify-center"
-        >
-          <svg class="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-            />
-          </svg>
-        </div>
-        <h1 class="mt-4 text-2xl font-bold text-gray-900">DMARC Viewer</h1>
+        <BrandMark class="mx-auto h-12 w-12 text-accent" />
+        <h1 class="mt-4 text-2xl font-bold text-gray-900">{{ branding.name }}</h1>
         <p class="mt-1 text-sm text-gray-600">Sign in to view report data</p>
       </div>
 
@@ -52,7 +41,11 @@
             />
           </div>
 
-          <button type="submit" class="btn btn-primary w-full justify-center" :disabled="busy">
+          <button
+            type="submit"
+            class="btn w-full justify-center bg-accent text-accent-foreground hover:bg-accent/90 focus:ring-accent"
+            :disabled="busy"
+          >
             <span v-if="busy">Signing in…</span>
             <span v-else>Sign in</span>
           </button>
@@ -70,13 +63,16 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import BrandMark from '@/components/BrandMark.vue';
 import { authApi } from '@/api/client';
 import { useAuth } from '@/composables/useAuth';
+import { useBranding } from '@/composables/useBranding';
 import type { SessionPolicy } from '@/types/api';
 
 const route = useRoute();
 const router = useRouter();
 const { login } = useAuth();
+const branding = useBranding();
 
 const email = ref('');
 const password = ref('');

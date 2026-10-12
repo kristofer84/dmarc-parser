@@ -1,16 +1,9 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- Header -->
-    <div class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="py-6">
-          <h1 class="text-3xl font-bold text-gray-900">DMARC Dashboard</h1>
-          <p class="mt-2 text-sm text-gray-600">
-            Monitor your email authentication status and security metrics
-          </p>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      title="DMARC Dashboard"
+      description="Monitor your email authentication status and security metrics"
+    />
 
     <!-- Main content -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -170,7 +163,7 @@
                       {{ domain.problems[0] || 'The last check failed' }}
                     </p>
                   </div>
-                  <span class="badge" :class="statusBadge(domain.status)">{{ domain.status }}</span>
+                  <StatusBadge :status="domain.status" kind="domain" />
                 </div>
                 <p v-if="!domains?.needsAttention?.length" class="text-sm text-gray-500">
                   Every domain passed its last check.
@@ -231,9 +224,12 @@
                     <p class="text-sm text-gray-500">messages</p>
                   </div>
                 </div>
-                <div v-if="data.topSources.length === 0" class="text-center py-4">
-                  <p class="text-sm text-gray-500">No data available</p>
-                </div>
+                <EmptyState
+                  v-if="data.topSources.length === 0"
+                  compact
+                  icon="inbox"
+                  title="No data available"
+                />
               </div>
             </div>
           </div>
@@ -268,9 +264,12 @@
                     </span>
                   </div>
                 </div>
-                <div v-if="data.topIPs.length === 0" class="text-center py-4">
-                  <p class="text-sm text-gray-500">No data available</p>
-                </div>
+                <EmptyState
+                  v-if="data.topIPs.length === 0"
+                  compact
+                  icon="inbox"
+                  title="No data available"
+                />
               </div>
             </div>
           </div>
@@ -288,17 +287,11 @@
       </div>
 
       <!-- Empty state -->
-      <div v-else class="text-center py-12">
-        <div class="text-gray-400 mb-4">
-          <svg class="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-        </div>
-        <h3 class="text-lg font-medium text-gray-900 mb-2">No DMARC data available</h3>
-        <p class="text-gray-500 mb-4">
-          Start by processing some DMARC reports to see your dashboard metrics.
-        </p>
-      </div>
+      <EmptyState
+        icon="chart"
+        title="No DMARC data available"
+        description="Start by processing some DMARC reports to see your dashboard metrics."
+      />
     </div>
   </div>
 </template>
@@ -307,6 +300,9 @@
 import { computed } from 'vue';
 import SummaryCard from '@/components/SummaryCard.vue';
 import ChartView from '@/components/ChartView.vue';
+import PageHeader from '@/components/PageHeader.vue';
+import EmptyState from '@/components/EmptyState.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { useAsyncData } from '@/composables/useApi';
 import { summaryApi, forensicsApi, domainsApi } from '@/api/client';
 
@@ -318,13 +314,6 @@ const { data: forensic } = useAsyncData(() => forensicsApi.summary());
 
 // Domain health; a fresh install has none, so failures here stay quiet too.
 const { data: domains } = useAsyncData(() => domainsApi.summary());
-
-const statusBadge = (status: string): string => {
-  if (status === 'ok') return 'badge-success';
-  if (status === 'warn') return 'badge-warning';
-  if (status === 'error') return 'badge-danger';
-  return 'badge-gray';
-};
 
 // Transform data for charts
 const trendsChartData = computed(() => {

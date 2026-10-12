@@ -1,3 +1,9 @@
+/** Public instance identity, read before login for the sign-in screen. */
+export interface Branding {
+  name: string;
+  accent: string;
+}
+
 export interface ReportSummary {
   id: string;
   domain: string;
@@ -263,6 +269,12 @@ export interface DomainCheckResult {
   fix?: string;
 }
 
+/** A single point of the per-domain trend sparkline, oldest first. */
+export interface DomainRecentCheck {
+  status: DomainCheckStatus;
+  runAt: string;
+}
+
 export interface DomainSummary {
   id: string;
   name: string;
@@ -278,6 +290,8 @@ export interface DomainSummary {
     durationMs: number;
     results: DomainCheckResult[];
   } | null;
+  /** Up to 14 of the most recent runs, oldest first. */
+  recent: DomainRecentCheck[];
 }
 
 export interface DomainCheckReport {

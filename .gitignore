@@ -143,3 +143,8 @@ Thumbs.db
 
 # Prisma
 prisma/migrations/
+# frontend/public holds the SPA's static assets (the favicon) and must be tracked. The bare
+# `public` rule above was aimed at build output and matched this directory by accident, which
+# would have shipped a clean clone with no favicon at all.
+!frontend/public/
+!frontend/public/**

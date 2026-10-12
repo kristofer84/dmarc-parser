@@ -1,31 +1,23 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- Header -->
-    <div class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="py-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <h1 class="text-3xl font-bold text-gray-900">Forensic Reports</h1>
-              <p class="mt-2 text-sm text-gray-600">
-                Per-message authentication failures reported to your ruf= address
-              </p>
-            </div>
-            <button @click="refreshAll" class="btn btn-secondary">
-              <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-              Refresh
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      title="Forensic Reports"
+      description="Per-message authentication failures reported to your ruf= address"
+    >
+      <template #actions>
+        <button @click="refreshAll" class="btn btn-secondary">
+          <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+          Refresh
+        </button>
+      </template>
+    </PageHeader>
 
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       <!-- Summary -->
@@ -78,7 +70,7 @@
       </div>
 
       <!-- Filters -->
-      <div class="bg-white p-4 rounded-lg shadow">
+      <div class="bg-surface p-4 rounded-card shadow-card border border-gray-200">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label for="domain-filter" class="block text-sm font-medium text-gray-700 mb-1">Domain</label>
@@ -190,18 +182,16 @@
           </div>
         </template>
         <template #cell-spfResult="{ value }">
-          <span class="badge" :class="resultBadge(value)">{{ value || '-' }}</span>
+          <StatusBadge :status="value" kind="auth" />
         </template>
         <template #cell-dkimResult="{ value }">
-          <span class="badge" :class="resultBadge(value)">{{ value || '-' }}</span>
+          <StatusBadge :status="value" kind="auth" />
         </template>
         <template #cell-dmarcResult="{ value }">
-          <span class="badge" :class="resultBadge(value)">{{ value || '-' }}</span>
+          <StatusBadge :status="value" kind="auth" />
         </template>
         <template #cell-reportAuthenticated="{ value }">
-          <span class="badge" :class="value ? 'badge-success' : 'badge-warning'">
-            {{ value ? 'Verified' : 'Unverified' }}
-          </span>
+          <StatusBadge :status="value ? 'verified' : 'unverified'" />
         </template>
       </DataTable>
     </div>
@@ -214,11 +204,16 @@ import { useRouter } from 'vue-router';
 import DataTable from '@/components/DataTable.vue';
 import SummaryCard from '@/components/SummaryCard.vue';
 import ChartView from '@/components/ChartView.vue';
+import PageHeader from '@/components/PageHeader.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { forensicsApi } from '@/api/client';
 import { useAsyncData } from '@/composables/useApi';
+import { useQueryFilters } from '@/composables/useQueryFilters';
+import { useToast } from '@/composables/useToast';
 import type { ForensicFilters, ForensicReportSummary, ForensicSummary } from '@/types/api';
 
 const router = useRouter();
+const toast = useToast();
 
 const columns = [
   { key: 'arrivalDate', label: 'Arrived', sortable: true, type: 'date' as const },
@@ -249,7 +244,6 @@ const filters = reactive<ForensicFilters>({
 const rows = ref<ForensicReportSummary[]>([]);
 const total = ref(0);
 const loading = ref(false);
-const loadError = ref<string | null>(null);
 
 const pagination = computed(() => ({
   page: filters.page ?? 1,
@@ -274,14 +268,13 @@ const trendChartData = computed(() =>
 
 const load = async () => {
   loading.value = true;
-  loadError.value = null;
 
   try {
     const result = await forensicsApi.list(filters);
     rows.value = result.data;
     total.value = result.pagination.total;
   } catch (error) {
-    loadError.value = error instanceof Error ? error.message : 'Failed to load forensic reports';
+    toast.error(error instanceof Error ? error.message : 'Failed to load forensic reports');
   } finally {
     loading.value = false;
   }
@@ -295,6 +288,7 @@ const debouncedFilter = () => {
 
 const applyFilters = () => {
   filters.page = 1;
+  sync();
   load();
 };
 
@@ -309,17 +303,20 @@ const clearFilters = () => {
     search: '',
     page: 1,
   });
+  sync();
   load();
 };
 
 const handleSort = ({ sortBy, sortOrder }: { sortBy: string; sortOrder: 'asc' | 'desc' }) => {
   filters.sortBy = sortBy as ForensicFilters['sortBy'];
   filters.sortOrder = sortOrder;
+  sync();
   load();
 };
 
 const handlePageChange = (page: number) => {
   filters.page = page;
+  sync();
   load();
 };
 
@@ -332,17 +329,17 @@ const refreshAll = () => {
   refreshSummary();
 };
 
-const resultBadge = (value: string | null): string => {
-  if (value === 'pass') return 'badge-success';
-  if (value === 'fail') return 'badge-danger';
-  if (value === 'none') return 'badge-gray';
-  return 'badge-warning';
-};
-
 const formatDateTime = (value: string | null): string => {
   if (!value) return '-';
   return new Date(value).toLocaleString();
 };
+
+// Reads the query back into `filters` at setup, so a shared link loads already filtered.
+const { sync } = useQueryFilters(
+  filters,
+  ['domain', 'sourceIp', 'reporter', 'verified', 'from', 'to', 'search', 'page', 'limit', 'sortBy', 'sortOrder'],
+  load,
+);
 
 onMounted(load);
 </script>

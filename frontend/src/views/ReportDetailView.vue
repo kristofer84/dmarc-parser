@@ -1,33 +1,11 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- Header -->
-    <div class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="py-6">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center space-x-4">
-              <button 
-                @click="goBack" 
-                class="btn btn-secondary"
-              >
-                <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-                Back to Reports
-              </button>
-              <div>
-                <h1 class="text-3xl font-bold text-gray-900">
-                  {{ data?.domain || 'Report Details' }}
-                </h1>
-                <p v-if="data" class="mt-2 text-sm text-gray-600">
-                  Report from {{ data.orgName }} • {{ formatDateRange(data.startDate, data.endDate) }}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      :title="data?.domain || 'Report Details'"
+      :description="data ? `Report from ${data.orgName} • ${formatDateRange(data.startDate, data.endDate)}` : undefined"
+      back-to="/reports"
+      back-label="Back to Reports"
+    />
 
     <!-- Main content -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -131,38 +109,26 @@
         >
           <!-- Custom cell templates -->
           <template #cell-sourceIp="{ value }">
-            <span class="font-mono text-sm">{{ value }}</span>
+            <span class="group inline-flex items-center gap-1">
+              <span class="font-mono text-sm nums">{{ value }}</span>
+              <CopyButton :value="value" label="source IP" />
+            </span>
           </template>
 
           <template #cell-count="{ value }">
-            <span class="font-medium">{{ value.toLocaleString() }}</span>
+            <span class="font-medium nums">{{ value.toLocaleString() }}</span>
           </template>
 
           <template #cell-disposition="{ value }">
-            <span 
-              class="badge"
-              :class="value === 'none' ? 'badge-success' : value === 'quarantine' ? 'badge-warning' : 'badge-danger'"
-            >
-              {{ value }}
-            </span>
+            <StatusBadge :status="value" kind="disposition" />
           </template>
 
           <template #cell-dkim="{ value }">
-            <span 
-              class="badge"
-              :class="value === 'pass' ? 'badge-success' : 'badge-danger'"
-            >
-              {{ value }}
-            </span>
+            <StatusBadge :status="value" kind="auth" />
           </template>
 
           <template #cell-spf="{ value }">
-            <span 
-              class="badge"
-              :class="value === 'pass' ? 'badge-success' : 'badge-danger'"
-            >
-              {{ value }}
-            </span>
+            <StatusBadge :status="value" kind="auth" />
           </template>
 
           <template #cell-headerFrom="{ value }">
@@ -208,8 +174,9 @@
                   class="flex items-center justify-between"
                 >
                   <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-900 font-mono">
-                      {{ ip.sourceIp }}
+                    <p class="group flex items-center gap-1 text-sm font-medium text-gray-900 font-mono nums">
+                      <span class="truncate">{{ ip.sourceIp }}</span>
+                      <CopyButton :value="ip.sourceIp" label="source IP" />
                     </p>
                     <p class="text-sm text-gray-500">
                       {{ ((ip.count / data.totalMessages) * 100).toFixed(1) }}% of traffic
@@ -233,9 +200,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useRouter } from 'vue-router';
 import SummaryCard from '@/components/SummaryCard.vue';
 import DataTable from '@/components/DataTable.vue';
+import PageHeader from '@/components/PageHeader.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
+import CopyButton from '@/components/CopyButton.vue';
 import { useAsyncData } from '@/composables/useApi';
 import { reportsApi } from '@/api/client';
 
@@ -244,7 +213,6 @@ interface Props {
 }
 
 const props = defineProps<Props>();
-const router = useRouter();
 
 // Fetch report data
 const { data, loading, error, refresh } = useAsyncData(() => reportsApi.getReportById(props.id));
@@ -302,9 +270,5 @@ const formatDateRange = (startDate: string, endDate: string): string => {
   }
   
   return `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
-};
-
-const goBack = () => {
-  router.push('/reports');
 };
 </script>

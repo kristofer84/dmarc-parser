@@ -9,7 +9,7 @@
         <canvas ref="chartCanvas"></canvas>
 
         <!-- Loading state -->
-        <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75">
+        <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-surface/75">
           <div class="flex items-center space-x-2">
             <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
             <span class="text-sm text-gray-600">Loading chart...</span>
@@ -17,7 +17,7 @@
         </div>
 
         <!-- Error state -->
-        <div v-if="error" class="absolute inset-0 flex items-center justify-center bg-white">
+        <div v-if="error" class="absolute inset-0 flex items-center justify-center bg-surface">
           <div class="text-center">
             <div class="text-danger-500 mb-2">
               <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -31,7 +31,7 @@
 
         <!-- Empty state -->
         <div v-if="!loading && !error && (!data || data.length === 0)"
-          class="absolute inset-0 flex items-center justify-center bg-white">
+          class="absolute inset-0 flex items-center justify-center bg-surface">
           <div class="text-center">
             <div class="text-gray-400 mb-2">
               <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -68,6 +68,7 @@ import {
   type ChartData,
   type ChartOptions,
 } from 'chart.js';
+import { useTheme } from '@/composables/useTheme';
 
 // Register Chart.js components
 Chart.register(
@@ -106,105 +107,101 @@ const props = withDefaults(defineProps<Props>(), {
 const chartCanvas = ref<HTMLCanvasElement>();
 let chartInstance: Chart | null = null;
 
-const defaultColors = {
-  primary: '#3b82f6',
-  success: '#22c55e',
-  warning: '#f59e0b',
-  danger: '#ef4444',
-  gray: '#6b7280',
-};
+const { resolvedTheme } = useTheme();
+
+/**
+ * Resolve a design token at chart-build time. Chart.js bakes colours into the canvas, so it
+ * cannot follow a CSS variable the way the DOM does - the chart has to be rebuilt when the
+ * theme flips (see the watch below).
+ */
+const token = (name: string): string =>
+  getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '0 0 0';
+
+const rgb = (name: string, alpha?: number): string =>
+  alpha === undefined ? `rgb(${token(name)})` : `rgb(${token(name)} / ${alpha})`;
+
+const themeColors = () => ({
+  primary: rgb('--color-primary-600'),
+  primarySoft: rgb('--color-primary-600', 0.18),
+  danger: rgb('--color-danger-500'),
+  dangerSoft: rgb('--color-danger-500', 0.18),
+  success: rgb('--color-success-500'),
+  warning: rgb('--color-warning-500'),
+  gray: rgb('--color-gray-400'),
+  grid: rgb('--color-gray-200'),
+  tick: rgb('--color-gray-500'),
+  text: rgb('--color-gray-700'),
+  surface: rgb('--surface'),
+});
 
 const createChartData = (): ChartData => {
   if (!props.data || props.data.length === 0) {
     return { labels: [], datasets: [] };
   }
 
+  const colors = themeColors();
+
   switch (props.type) {
     case 'line':
-      return createLineChartData();
+      return {
+        labels: props.data.map((item) => item.date || item.label),
+        datasets: [
+          {
+            label: 'Message Count',
+            data: props.data.map((item) => item.messageCount || item.value),
+            borderColor: colors.primary,
+            backgroundColor: colors.primarySoft,
+            tension: 0.1,
+          },
+          {
+            label: 'Failure Rate (%)',
+            data: props.data.map((item) => item.failureRate || item.secondaryValue || 0),
+            borderColor: colors.danger,
+            backgroundColor: colors.dangerSoft,
+            tension: 0.1,
+            yAxisID: 'y1',
+          },
+        ],
+      };
     case 'bar':
-      return createBarChartData();
+      return {
+        labels: props.data.map((item) => item.label || item.name),
+        datasets: [
+          {
+            label: 'Count',
+            data: props.data.map((item) => item.value || item.count),
+            backgroundColor: colors.primary,
+          },
+        ],
+      };
     case 'pie':
     case 'doughnut':
-      return createPieChartData();
+      return {
+        labels: props.data.map((item) => item.label || item.name),
+        datasets: [
+          {
+            data: props.data.map((item) => item.value || item.count),
+            backgroundColor: [colors.success, colors.warning, colors.danger, colors.primary, colors.gray],
+            borderColor: colors.surface,
+            borderWidth: 2,
+          },
+        ],
+      };
     default:
       return { labels: [], datasets: [] };
   }
 };
 
-const createLineChartData = (): ChartData => {
-  const labels = props.data.map(item => item.date || item.label);
-
-  return {
-    labels,
-    datasets: [
-      {
-        label: 'Message Count',
-        data: props.data.map(item => item.messageCount || item.value),
-        borderColor: defaultColors.primary,
-        backgroundColor: defaultColors.primary + '20',
-        tension: 0.1,
-      },
-      {
-        label: 'Failure Rate (%)',
-        data: props.data.map(item => item.failureRate || item.secondaryValue || 0),
-        borderColor: defaultColors.danger,
-        backgroundColor: defaultColors.danger + '20',
-        tension: 0.1,
-        yAxisID: 'y1',
-      },
-    ],
-  };
-};
-
-const createBarChartData = (): ChartData => {
-  const labels = props.data.map(item => item.label || item.name);
-
-  return {
-    labels,
-    datasets: [
-      {
-        label: 'Count',
-        data: props.data.map(item => item.value || item.count),
-        backgroundColor: [
-          defaultColors.primary,
-          defaultColors.success,
-          defaultColors.warning,
-          defaultColors.danger,
-          defaultColors.gray,
-        ],
-      },
-    ],
-  };
-};
-
-const createPieChartData = (): ChartData => {
-  const labels = props.data.map(item => item.label || item.name);
-
-  return {
-    labels,
-    datasets: [
-      {
-        data: props.data.map(item => item.value || item.count),
-        backgroundColor: [
-          defaultColors.success,
-          defaultColors.warning,
-          defaultColors.danger,
-          defaultColors.primary,
-          defaultColors.gray,
-        ],
-      },
-    ],
-  };
-};
-
 const createChartOptions = (): ChartOptions => {
+  const colors = themeColors();
+
   const baseOptions: ChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: {
         position: 'bottom',
+        labels: { color: colors.text },
       },
       tooltip: {
         mode: 'index',
@@ -214,22 +211,24 @@ const createChartOptions = (): ChartOptions => {
     ...props.options,
   };
 
+  const axis = {
+    grid: { color: colors.grid },
+    ticks: { color: colors.tick },
+  };
+
   if (props.type === 'line') {
     return {
       ...baseOptions,
       scales: {
-        y: {
-          type: 'linear',
-          display: true,
-          position: 'left',
-        },
+        x: { ...axis },
+        y: { type: 'linear', display: true, position: 'left', beginAtZero: true, ...axis },
         y1: {
           type: 'linear',
           display: true,
           position: 'right',
-          grid: {
-            drawOnChartArea: false,
-          },
+          beginAtZero: true,
+          grid: { drawOnChartArea: false },
+          ticks: { color: colors.tick },
         },
       },
     };
@@ -239,9 +238,8 @@ const createChartOptions = (): ChartOptions => {
     return {
       ...baseOptions,
       scales: {
-        y: {
-          beginAtZero: true,
-        },
+        x: { ...axis },
+        y: { beginAtZero: true, ...axis },
       },
     };
   }
@@ -290,6 +288,13 @@ watch(
   },
   { deep: true }
 );
+
+// A theme flip changes every colour the canvas baked in, so a data update is not enough.
+watch(resolvedTheme, () => {
+  if (!props.loading && !props.error && props.data?.length > 0) {
+    createChart();
+  }
+});
 
 onMounted(() => {
   if (!props.loading && !props.error && props.data?.length > 0) {

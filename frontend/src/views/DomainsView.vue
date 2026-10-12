@@ -1,51 +1,33 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- Header -->
-    <div class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="py-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <h1 class="text-3xl font-bold text-gray-900">Domains</h1>
-              <p class="mt-2 text-sm text-gray-600">
-                DNS authentication status for every domain you monitor
-              </p>
-            </div>
-            <div class="flex items-center space-x-2">
-              <button
-                v-if="isAdmin"
-                @click="discover"
-                :disabled="discovering"
-                class="btn btn-secondary"
-                :class="{ 'opacity-50 cursor-not-allowed': discovering }"
-              >
-                {{ discovering ? 'Discovering…' : 'Discover domains' }}
-              </button>
-              <button
-                v-if="isAdmin"
-                @click="checkAll"
-                :disabled="checkingAll"
-                class="btn btn-primary"
-                :class="{ 'opacity-50 cursor-not-allowed': checkingAll }"
-              >
-                {{ checkingAll ? 'Checking…' : 'Check all' }}
-              </button>
-              <button @click="refreshAll" class="btn btn-secondary">Refresh</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      title="Domains"
+      description="DNS authentication status for every domain you monitor"
+    >
+      <template #actions>
+        <button
+          v-if="isAdmin"
+          @click="discover"
+          :disabled="discovering"
+          class="btn btn-secondary"
+          :class="{ 'opacity-50 cursor-not-allowed': discovering }"
+        >
+          {{ discovering ? 'Discovering…' : 'Discover domains' }}
+        </button>
+        <button
+          v-if="isAdmin"
+          @click="checkAll"
+          :disabled="checkingAll"
+          class="btn btn-primary"
+          :class="{ 'opacity-50 cursor-not-allowed': checkingAll }"
+        >
+          {{ checkingAll ? 'Checking…' : 'Check all' }}
+        </button>
+        <button @click="refreshAll" class="btn btn-secondary">Refresh</button>
+      </template>
+    </PageHeader>
 
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <p
-        v-if="feedback"
-        class="rounded-md p-4 text-sm"
-        :class="feedback.error ? 'bg-danger-50 text-danger-800' : 'bg-success-50 text-success-800'"
-      >
-        {{ feedback.text }}
-      </p>
-
       <!-- Summary -->
       <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard title="Domains" :value="summary?.total ?? 0" icon="reports" color="blue" />
@@ -95,37 +77,47 @@
         </template>
 
         <template #cell-name="{ item }">
-          <div>
-            <p class="font-medium text-gray-900">{{ item.name }}</p>
+          <div class="group">
+            <div class="flex items-center gap-1">
+              <p class="font-medium text-gray-900">{{ item.name }}</p>
+              <CopyButton :value="item.name" label="domain" />
+            </div>
             <p v-if="item.notes" class="text-xs text-gray-500">{{ item.notes }}</p>
           </div>
         </template>
 
         <template #cell-status="{ item }">
-          <span class="badge" :class="statusBadge(item.lastCheck?.status)">
-            {{ item.lastCheck?.status ?? 'not checked' }}
-          </span>
+          <StatusBadge :status="item.lastCheck?.status" kind="domain" icon />
+        </template>
+
+        <template #cell-trend="{ item }">
+          <Sparkline :points="item.recent ?? []" />
         </template>
 
         <template #cell-checks="{ item }">
           <div class="flex flex-wrap gap-1">
             <template v-for="check in checkBadges(item)" :key="check.id">
-              <span v-if="check.status" class="badge" :class="statusBadge(check.status)" :title="check.title">
-                {{ check.label }}
-              </span>
+              <StatusBadge
+                v-if="check.status"
+                :status="check.status"
+                kind="domain"
+                :label="check.label"
+                icon
+              />
               <span v-else class="text-xs text-gray-300" :title="check.title">{{ check.label }} –</span>
             </template>
           </div>
         </template>
 
         <template #cell-lastChecked="{ item }">
-          {{ formatRelative(item.lastCheck?.runAt ?? null) }}
+          <span class="nums">{{ formatRelative(item.lastCheck?.runAt ?? null) }}</span>
         </template>
 
         <template #cell-monitored="{ item }">
-          <span class="badge" :class="item.monitored ? 'badge-success' : 'badge-gray'">
-            {{ item.monitored ? 'Monitored' : 'Paused' }}
-          </span>
+          <StatusBadge
+            :status="item.monitored ? 'monitored' : 'paused'"
+            :label="item.monitored ? 'Monitored' : 'Paused'"
+          />
         </template>
       </DataTable>
 
@@ -149,15 +141,23 @@
         <div class="card">
           <div class="card-body flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <div class="flex items-center space-x-2">
+              <div class="group flex items-center space-x-2">
                 <h2 class="text-lg leading-6 font-medium text-gray-900">{{ detail.domain.name }}</h2>
-                <span class="badge" :class="statusBadge(detail.domain.lastCheck?.status)">
-                  {{ detail.domain.lastCheck?.status ?? 'not checked' }}
-                </span>
+                <CopyButton :value="detail.domain.name" label="domain" />
+                <StatusBadge :status="detail.domain.lastCheck?.status" kind="domain" icon />
               </div>
               <p class="mt-1 text-sm text-gray-500">
                 Last checked {{ formatRelative(detail.domain.lastCheck?.runAt ?? null) }}
                 <span v-if="detail.domain.lastCheck"> in {{ detail.domain.lastCheck.durationMs }} ms</span>
+              </p>
+              <p v-if="latestChange" class="mt-1 text-sm" :class="latestChange.changed ? 'text-warning-700' : 'text-gray-500'">
+                <template v-if="latestChange.changed">
+                  Status changed from {{ latestChange.from }} to {{ latestChange.to }} at the previous
+                  check on {{ formatDateTime(latestChange.at) }}.
+                </template>
+                <template v-else>
+                  Unchanged since the previous check on {{ formatDateTime(latestChange.at) }}.
+                </template>
               </p>
             </div>
             <button
@@ -185,13 +185,18 @@
               <div v-for="result in latestResults" :key="result.id" class="p-4 sm:p-6">
                 <div class="flex items-center justify-between">
                   <h4 class="text-sm font-medium text-gray-900">{{ result.label }}</h4>
-                  <span class="badge" :class="statusBadge(result.status)">{{ result.status }}</span>
+                  <StatusBadge :status="result.status" kind="domain" icon />
                 </div>
                 <p class="mt-2 text-sm text-gray-700">{{ result.summary }}</p>
-                <pre
+                <div
                   v-if="result.details?.length"
-                  class="mt-2 text-xs bg-gray-50 rounded p-3 overflow-x-auto whitespace-pre-wrap break-all"
-                >{{ result.details.join('\n') }}</pre>
+                  class="mt-2 flex items-start justify-between gap-2 rounded bg-surface-muted p-3"
+                >
+                  <div class="font-mono text-xs text-gray-700 whitespace-pre-wrap break-all">
+                    <p v-for="(line, index) in result.details" :key="index">{{ line }}</p>
+                  </div>
+                  <CopyButton :value="result.details.join('\n')" label="records" />
+                </div>
                 <div v-if="result.fix" class="mt-2 rounded-md bg-warning-50 p-3">
                   <p class="text-sm text-warning-800">{{ result.fix }}</p>
                 </div>
@@ -217,6 +222,7 @@
                     class="w-3 h-3 rounded-full"
                     :class="statusDot(run.status)"
                     :title="`${run.status} — ${formatDateTime(run.runAt)}`"
+                    :aria-label="`${run.status} — ${formatDateTime(run.runAt)}`"
                   ></span>
                 </div>
               </div>
@@ -289,13 +295,6 @@
                     {{ removing ? 'Removing…' : 'Delete' }}
                   </button>
                 </div>
-                <p
-                  v-if="editMessage"
-                  class="text-sm"
-                  :class="editMessage.error ? 'text-danger-700' : 'text-success-700'"
-                >
-                  {{ editMessage.text }}
-                </p>
               </div>
             </div>
           </div>
@@ -312,9 +311,15 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import DataTable from '@/components/DataTable.vue';
 import SummaryCard from '@/components/SummaryCard.vue';
 import ChartView from '@/components/ChartView.vue';
+import PageHeader from '@/components/PageHeader.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
+import CopyButton from '@/components/CopyButton.vue';
+import Sparkline from '@/components/Sparkline.vue';
 import { domainsApi } from '@/api/client';
 import { useAsyncData } from '@/composables/useApi';
 import { useAuth } from '@/composables/useAuth';
+import { useToast } from '@/composables/useToast';
+import { useQueryFilters } from '@/composables/useQueryFilters';
 import type {
   DomainCheckResult,
   DomainCheckStatus,
@@ -324,10 +329,12 @@ import type {
 } from '@/types/api';
 
 const { isAdmin } = useAuth();
+const toast = useToast();
 
 const columns = [
   { key: 'name', label: 'Domain' },
   { key: 'status', label: 'Status' },
+  { key: 'trend', label: 'Trend' },
   { key: 'checks', label: 'Checks' },
   { key: 'lastChecked', label: 'Last checked' },
   { key: 'monitored', label: 'Monitored' },
@@ -381,16 +388,7 @@ const checkingAll = ref(false);
 const savingEdit = ref(false);
 const removing = ref(false);
 
-const feedback = ref<{ text: string; error: boolean } | null>(null);
-const editMessage = ref<{ text: string; error: boolean } | null>(null);
 const edit = reactive({ dkimSelectors: '', expectedMx: '', monitored: true });
-
-const statusBadge = (status: string | undefined): string => {
-  if (status === 'ok') return 'badge-success';
-  if (status === 'warn') return 'badge-warning';
-  if (status === 'error') return 'badge-danger';
-  return 'badge-gray';
-};
 
 const statusDot = (status: string): string => {
   if (status === 'ok') return 'bg-success-500';
@@ -427,6 +425,19 @@ const latestResults = computed<DomainCheckResult[]>(
 );
 
 const historyDots = computed(() => detail.value?.history.slice(0, 15).reverse() ?? []);
+
+/** Newest two runs, so the detail can say whether anything actually moved. */
+const latestChange = computed(() => {
+  const history = detail.value?.history ?? [];
+  if (history.length < 2) return null;
+  const [latest, previous] = history;
+  return {
+    from: previous.status,
+    to: latest.status,
+    at: previous.runAt,
+    changed: latest.status !== previous.status,
+  };
+});
 
 const statusChartData = computed(() =>
   (detail.value?.history ?? [])
@@ -470,15 +481,31 @@ const loadDetail = async (id: string) => {
   }
 };
 
+// The selected domain is part of the URL, so an expanded row can be linked to.
+const selection = reactive({ domain: '' });
+const openSelection = () => {
+  if (selection.domain) {
+    selectedId.value = selection.domain;
+    loadDetail(selection.domain);
+  } else {
+    selectedId.value = null;
+    detail.value = null;
+  }
+};
+const { sync } = useQueryFilters(selection, ['domain'], openSelection);
+
 const selectDomain = (domain: DomainSummary) => {
   if (selectedId.value === domain.id) {
     selectedId.value = null;
     detail.value = null;
+    selection.domain = '';
+    sync();
     return;
   }
 
   selectedId.value = domain.id;
-  editMessage.value = null;
+  selection.domain = domain.id;
+  sync();
   loadDetail(domain.id);
 };
 
@@ -504,11 +531,11 @@ const addDomain = async () => {
   try {
     const created = await domainsApi.create({ name });
     newDomain.value = '';
-    feedback.value = { text: `Added ${created.name}`, error: false };
+    toast.success(`Added ${created.name}`);
     await load();
     refreshSummary();
   } catch (err) {
-    feedback.value = { text: err instanceof Error ? err.message : 'Could not add the domain', error: true };
+    toast.error(err instanceof Error ? err.message : 'Could not add the domain');
   } finally {
     adding.value = false;
   }
@@ -518,17 +545,15 @@ const discover = async () => {
   discovering.value = true;
   try {
     const result = await domainsApi.discover();
-    feedback.value = {
-      text:
-        result.added.length > 0
-          ? `Added ${result.added.length} domain(s): ${result.added.join(', ')}`
-          : `No new domains found (${result.existing} already tracked)`,
-      error: false,
-    };
+    toast.success(
+      result.added.length > 0
+        ? `Added ${result.added.length} domain(s): ${result.added.join(', ')}`
+        : `No new domains found (${result.existing} already tracked)`,
+    );
     await load();
     refreshSummary();
   } catch (err) {
-    feedback.value = { text: err instanceof Error ? err.message : 'Could not discover domains', error: true };
+    toast.error(err instanceof Error ? err.message : 'Could not discover domains');
   } finally {
     discovering.value = false;
   }
@@ -538,17 +563,19 @@ const checkAll = async () => {
   checkingAll.value = true;
   try {
     const result = await domainsApi.checkAll();
-    feedback.value = {
-      text: `Checked ${result.checked} domain(s), ${result.failed} failed`,
-      error: result.failed > 0,
-    };
+    const message = `Checked ${result.checked} domain(s), ${result.failed} failed`;
+    if (result.failed > 0) {
+      toast.error(message);
+    } else {
+      toast.success(message);
+    }
     await load();
     refreshSummary();
     if (selectedId.value) {
       await loadDetail(selectedId.value);
     }
   } catch (err) {
-    feedback.value = { text: err instanceof Error ? err.message : 'Check-all failed', error: true };
+    toast.error(err instanceof Error ? err.message : 'Check-all failed');
   } finally {
     checkingAll.value = false;
   }
@@ -562,15 +589,17 @@ const checkNow = async () => {
   checkingNow.value = true;
   try {
     const report = await domainsApi.check(id);
-    feedback.value = {
-      text: `${report.domain}: ${report.status} in ${report.durationMs} ms`,
-      error: report.status === 'error',
-    };
+    const message = `${report.domain}: ${report.status} in ${report.durationMs} ms`;
+    if (report.status === 'error') {
+      toast.error(message);
+    } else {
+      toast.success(message);
+    }
     await loadDetail(id);
     await load();
     refreshSummary();
   } catch (err) {
-    feedback.value = { text: err instanceof Error ? err.message : 'Check failed', error: true };
+    toast.error(err instanceof Error ? err.message : 'Check failed');
   } finally {
     checkingNow.value = false;
   }
@@ -581,7 +610,6 @@ const saveEdit = async () => {
   if (!current) return;
 
   savingEdit.value = true;
-  editMessage.value = null;
   try {
     const updated = await domainsApi.update(current.domain.id, {
       dkimSelectors: splitList(edit.dkimSelectors),
@@ -589,11 +617,11 @@ const saveEdit = async () => {
       monitored: edit.monitored,
     });
     detail.value = { ...current, domain: updated };
-    editMessage.value = { text: 'Saved', error: false };
+    toast.success('Saved');
     await load();
     refreshSummary();
   } catch (err) {
-    editMessage.value = { text: err instanceof Error ? err.message : 'Could not save', error: true };
+    toast.error(err instanceof Error ? err.message : 'Could not save');
   } finally {
     savingEdit.value = false;
   }
@@ -607,16 +635,17 @@ const removeDomain = async () => {
   if (!window.confirm(`Remove ${name} from monitoring? Its check history is deleted too.`)) return;
 
   removing.value = true;
-  editMessage.value = null;
   try {
     await domainsApi.remove(id);
     selectedId.value = null;
     detail.value = null;
-    feedback.value = { text: `Removed ${name}`, error: false };
+    selection.domain = '';
+    sync();
+    toast.success(`Removed ${name}`);
     await load();
     refreshSummary();
   } catch (err) {
-    editMessage.value = { text: err instanceof Error ? err.message : 'Could not remove the domain', error: true };
+    toast.error(err instanceof Error ? err.message : 'Could not remove the domain');
   } finally {
     removing.value = false;
   }
@@ -638,6 +667,12 @@ const formatRelative = (value: string | null): string => {
 
   return `${Math.round(hours / 24)} d ago`;
 };
+
+// A shared ?domain=<id> link opens the same row's detail once the list has loaded.
+if (selection.domain) {
+  selectedId.value = selection.domain;
+  loadDetail(selection.domain);
+}
 
 onMounted(load);
 </script>

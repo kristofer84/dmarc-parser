@@ -1,28 +1,11 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <div class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="py-6">
-          <div class="flex items-center space-x-4">
-            <button @click="$router.push({ name: 'Forensics' })" class="btn btn-secondary">
-              <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              Back to Forensic Reports
-            </button>
-            <div>
-              <h1 class="text-3xl font-bold text-gray-900">
-                {{ report?.domain || 'Forensic Report' }}
-              </h1>
-              <p v-if="report" class="mt-2 text-sm text-gray-600">
-                Reported by {{ report.reporter || 'unknown reporter' }} •
-                {{ formatDateTime(report.arrivalDate || report.createdAt) }}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      :title="report?.domain || 'Forensic Report'"
+      :description="report ? `Reported by ${report.reporter || 'unknown reporter'} • ${formatDateTime(report.arrivalDate || report.createdAt)}` : undefined"
+      :back-to="{ name: 'Forensics' }"
+      back-label="Back to Forensic Reports"
+    />
 
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div v-if="loading" class="flex items-center justify-center py-12">
@@ -64,7 +47,12 @@
               <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <div>
                   <dt class="stat-label">Source IP</dt>
-                  <dd class="mt-1 font-mono text-gray-900">{{ report.sourceIp || '-' }}</dd>
+                  <dd class="mt-1 flex items-center gap-1 font-mono text-gray-900">
+                    <span class="group inline-flex items-center gap-1">
+                      <span class="nums">{{ report.sourceIp || '-' }}</span>
+                      <CopyButton v-if="report.sourceIp" :value="report.sourceIp" label="source IP" />
+                    </span>
+                  </dd>
                 </div>
                 <div>
                   <dt class="stat-label">Reported domain</dt>
@@ -72,15 +60,15 @@
                 </div>
                 <div>
                   <dt class="stat-label">SPF</dt>
-                  <dd class="mt-1"><span class="badge" :class="resultBadge(report.spfResult)">{{ report.spfResult || '-' }}</span></dd>
+                  <dd class="mt-1"><StatusBadge :status="report.spfResult" kind="auth" /></dd>
                 </div>
                 <div>
                   <dt class="stat-label">DKIM</dt>
-                  <dd class="mt-1"><span class="badge" :class="resultBadge(report.dkimResult)">{{ report.dkimResult || '-' }}</span></dd>
+                  <dd class="mt-1"><StatusBadge :status="report.dkimResult" kind="auth" /></dd>
                 </div>
                 <div>
                   <dt class="stat-label">DMARC</dt>
-                  <dd class="mt-1"><span class="badge" :class="resultBadge(report.dmarcResult)">{{ report.dmarcResult || '-' }}</span></dd>
+                  <dd class="mt-1"><StatusBadge :status="report.dmarcResult" kind="auth" /></dd>
                 </div>
                 <div>
                   <dt class="stat-label">Feedback type</dt>
@@ -118,7 +106,7 @@
 
               <div class="mt-6">
                 <h4 class="stat-label">Authentication-Results</h4>
-                <pre class="mt-2 text-xs bg-gray-50 rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">{{ report.authResults || '(none recorded)' }}</pre>
+                <pre class="mt-2 text-xs bg-surface-muted rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">{{ report.authResults || '(none recorded)' }}</pre>
               </div>
 
               <div v-if="report.userAgent" class="mt-4">
@@ -161,18 +149,23 @@
                 </div>
                 <div v-if="report.reportedMessageId">
                   <dt class="stat-label">Message-ID</dt>
-                  <dd class="mt-1 font-mono text-gray-900 break-all">{{ report.reportedMessageId }}</dd>
+                  <dd class="mt-1 flex items-start gap-1 font-mono text-gray-900 break-all">
+                    <span class="group inline-flex items-start gap-1">
+                      <span>{{ report.reportedMessageId }}</span>
+                      <CopyButton :value="report.reportedMessageId" label="Message-ID" />
+                    </span>
+                  </dd>
                 </div>
               </dl>
 
               <div v-if="report.reportedHeaders">
                 <h4 class="stat-label">Full reported headers</h4>
-                <pre class="mt-2 text-xs bg-gray-50 rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">{{ report.reportedHeaders }}</pre>
+                <pre class="mt-2 text-xs bg-surface-muted rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">{{ report.reportedHeaders }}</pre>
               </div>
 
               <div v-if="report.reportedBody">
                 <h4 class="stat-label">Reported body (truncated, attacker-controlled)</h4>
-                <pre class="mt-2 text-xs bg-gray-50 rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">{{ report.reportedBody }}</pre>
+                <pre class="mt-2 text-xs bg-surface-muted rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">{{ report.reportedBody }}</pre>
               </div>
 
               <p v-else class="text-xs text-gray-500">
@@ -192,7 +185,7 @@
             </p>
           </div>
           <div class="card-body">
-            <pre v-if="report.rawFeedback" class="text-xs bg-gray-50 rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">{{ report.rawFeedback }}</pre>
+            <pre v-if="report.rawFeedback" class="text-xs bg-surface-muted rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">{{ report.rawFeedback }}</pre>
             <p v-else class="text-sm text-gray-500">
               Storing the raw report block is disabled (Settings → Forensics → store raw feedback).
             </p>
@@ -211,9 +204,9 @@
             <table class="table">
               <thead class="table-header">
                 <tr>
-                  <th class="table-header-cell">When</th>
-                  <th class="table-header-cell">Status</th>
-                  <th class="table-header-cell">Details</th>
+                  <th scope="col" class="table-header-cell">When</th>
+                  <th scope="col" class="table-header-cell">Status</th>
+                  <th scope="col" class="table-header-cell">Details</th>
                 </tr>
               </thead>
               <tbody class="table-body">
@@ -221,11 +214,9 @@
                   <td class="table-cell text-gray-500" colspan="3">No processing entries recorded.</td>
                 </tr>
                 <tr v-for="log in report.processingLogs" :key="log.id" class="table-row">
-                  <td class="table-cell whitespace-nowrap">{{ formatDateTime(log.createdAt) }}</td>
+                  <td class="table-cell whitespace-nowrap nums">{{ formatDateTime(log.createdAt) }}</td>
                   <td class="table-cell">
-                    <span class="badge" :class="log.status === 'success' ? 'badge-success' : log.status === 'error' ? 'badge-danger' : 'badge-gray'">
-                      {{ log.status }}
-                    </span>
+                    <StatusBadge :status="log.status" kind="processing" />
                   </td>
                   <td class="table-cell break-all">{{ log.details || '-' }}</td>
                 </tr>
@@ -240,6 +231,9 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import PageHeader from '@/components/PageHeader.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
+import CopyButton from '@/components/CopyButton.vue';
 import { forensicsApi } from '@/api/client';
 import type { ForensicReportDetail } from '@/types/api';
 
@@ -260,13 +254,6 @@ const load = async () => {
   } finally {
     loading.value = false;
   }
-};
-
-const resultBadge = (value: string | null): string => {
-  if (value === 'pass') return 'badge-success';
-  if (value === 'fail') return 'badge-danger';
-  if (value === 'none') return 'badge-gray';
-  return 'badge-warning';
 };
 
 const formatDateTime = (value: string | null): string => {

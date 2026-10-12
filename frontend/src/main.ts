@@ -1,6 +1,8 @@
-import { createApp } from 'vue'
+import { createApp, watch } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
+// Self-hosted so the console does not reach out to a font CDN from an operator's browser.
+import '@fontsource-variable/inter'
 import './style.css'
 
 // Import views
@@ -14,6 +16,7 @@ import AdminSettingsView from './views/AdminSettingsView.vue'
 import AdminUsersView from './views/AdminUsersView.vue'
 import AccountView from './views/AccountView.vue'
 import { useAuth } from './composables/useAuth'
+import { brandingName } from './composables/useBranding'
 import { apiClient } from './api/client'
 
 declare module 'vue-router' {
@@ -22,6 +25,8 @@ declare module 'vue-router' {
     public?: boolean
     /** Requires role 'admin'. */
     admin?: boolean
+    /** Page label used in the document title; falls back to the route name. */
+    title?: string
   }
 }
 
@@ -33,55 +38,71 @@ const router = createRouter({
       path: '/',
       name: 'Dashboard',
       component: DashboardView,
+      meta: { title: 'Dashboard' },
     },
     {
       path: '/reports',
       name: 'Reports',
       component: ReportListView,
+      meta: { title: 'Reports' },
+    },
+    {
+      // Missing until now: the report list and the processing log both push to /reports/:id,
+      // and the nav already expected a 'ReportDetail' route name.
+      path: '/reports/:id',
+      name: 'ReportDetail',
+      component: () => import('./views/ReportDetailView.vue'),
+      props: true,
+      meta: { title: 'Report' },
     },
     {
       path: '/forensics',
       name: 'Forensics',
       component: ForensicsView,
+      meta: { title: 'Forensics' },
     },
     {
       path: '/forensics/:id',
       name: 'ForensicDetail',
       component: () => import('./views/ForensicDetailView.vue'),
       props: true,
+      meta: { title: 'Forensic report' },
     },
     {
       path: '/processing-logs',
       name: 'ProcessingLogs',
       component: ProcessingLogsView,
+      meta: { title: 'Processing logs' },
     },
     {
       path: '/domains',
       name: 'Domains',
       component: DomainsView,
+      meta: { title: 'Domains' },
     },
     {
       path: '/admin/settings',
       name: 'AdminSettings',
       component: AdminSettingsView,
-      meta: { admin: true },
+      meta: { admin: true, title: 'Settings' },
     },
     {
       path: '/admin/users',
       name: 'AdminUsers',
       component: AdminUsersView,
-      meta: { admin: true },
+      meta: { admin: true, title: 'Users' },
     },
     {
       path: '/account',
       name: 'Account',
       component: AccountView,
+      meta: { title: 'Account' },
     },
     {
       path: '/login',
       name: 'Login',
       component: LoginView,
-      meta: { public: true },
+      meta: { public: true, title: 'Sign in' },
     },
   ],
 })
@@ -122,6 +143,17 @@ router.beforeEach(async (to) => {
 
   return true
 })
+
+// The branding name may not have arrived yet (the fetch is async and may fail); the
+// fallback matches what index.html ships so the title never flickers to something wrong.
+const applyTitle = (to: { meta: { title?: unknown }; name?: unknown }): void => {
+  const label = (to.meta.title as string | undefined) ?? (to.name as string | undefined)
+  document.title = label ? `${label} · ${brandingName.value}` : brandingName.value
+}
+
+router.afterEach((to) => applyTitle(to))
+// Branding resolves after the first navigation, so the suffix has to be re-applied when it does.
+watch(brandingName, () => applyTitle(router.currentRoute.value))
 
 const app = createApp(App)
 app.use(router)

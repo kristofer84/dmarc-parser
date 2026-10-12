@@ -1,39 +1,29 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- Header -->
-    <div class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="py-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <h1 class="text-3xl font-bold text-gray-900">Processing Logs</h1>
-              <p class="mt-2 text-sm text-gray-600">
-                Review each attachment processed by the DMARC ingestion pipeline
-              </p>
-            </div>
-            <div class="flex space-x-3">
-              <button @click="refreshData" class="btn btn-secondary">
-                <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
-                Refresh
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      title="Processing Logs"
+      description="Review each attachment processed by the DMARC ingestion pipeline"
+    >
+      <template #actions>
+        <button @click="refreshData" class="btn btn-secondary">
+          <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+          Refresh
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- Main content -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- Filters -->
       <div class="mb-6">
-        <div class="bg-white p-4 rounded-lg shadow">
+        <div class="bg-surface p-4 rounded-card shadow-card border border-gray-200">
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label for="status-filter" class="block text-sm font-medium text-gray-700 mb-1">
@@ -105,8 +95,8 @@
         :data="logs"
         :loading="loading"
         :pagination="pagination || undefined"
-        :sort-by="sortBy"
-        :sort-order="sortOrder"
+        :sort-by="filters.sortBy"
+        :sort-order="filters.sortOrder"
         title="Processing History"
         description="Click a row to jump to the associated DMARC report when available"
         empty-message="No processing activity found. Trigger the email processor to populate logs."
@@ -115,14 +105,12 @@
         @page-change="handlePageChange"
       >
         <template #cell-createdAt="{ value }">
-          <div class="text-sm text-gray-900">{{ formatDateTime(value) }}</div>
+          <div class="text-sm text-gray-900 nums">{{ formatDateTime(value) }}</div>
           <div class="text-xs text-gray-500">{{ formatRelativeTime(value) }}</div>
         </template>
 
         <template #cell-status="{ value }">
-          <span class="badge" :class="getStatusBadgeClass(value)">
-            {{ humanizeStatus(value) }}
-          </span>
+          <StatusBadge :status="value" kind="processing" />
         </template>
 
         <template #cell-attachmentName="{ value }">
@@ -130,7 +118,7 @@
         </template>
 
         <template #cell-messageUid="{ value }">
-          <span>{{ value ?? '—' }}</span>
+          <span class="nums">{{ value ?? '—' }}</span>
         </template>
 
         <template #cell-report.domain="{ item }">
@@ -186,7 +174,10 @@
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import DataTable from '@/components/DataTable.vue';
+import PageHeader from '@/components/PageHeader.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { processingLogsApi } from '@/api/client';
+import { useQueryFilters } from '@/composables/useQueryFilters';
 import type {
   ProcessingLogEntry,
   PaginatedResponse,
@@ -199,23 +190,23 @@ const router = useRouter();
 const logs = ref<ProcessingLogEntry[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
-const sortBy = ref<ProcessingLogFilters['sortBy']>('createdAt');
-const sortOrder = ref<ProcessingLogFilters['sortOrder']>('desc');
 const pagination = ref<PaginatedResponse<ProcessingLogEntry>['pagination'] | null>(null);
 
 const filters = reactive({
-  status: 'all' as 'all' | ProcessingStatus,
+  status: '' as ProcessingStatus | '',
   search: '',
   page: 1,
   limit: 25,
+  sortBy: 'createdAt' as ProcessingLogFilters['sortBy'],
+  sortOrder: 'desc' as ProcessingLogFilters['sortOrder'],
 });
 
-const statusOptions = [
-  { label: 'All statuses', value: 'all' as const },
-  { label: 'Started', value: 'started' as const },
-  { label: 'Success', value: 'success' as const },
-  { label: 'Skipped', value: 'skipped' as const },
-  { label: 'Error', value: 'error' as const },
+const statusOptions: Array<{ label: string; value: ProcessingStatus | '' }> = [
+  { label: 'All statuses', value: '' },
+  { label: 'Started', value: 'started' },
+  { label: 'Success', value: 'success' },
+  { label: 'Skipped', value: 'skipped' },
+  { label: 'Error', value: 'error' },
 ];
 
 const columns = [
@@ -237,10 +228,10 @@ const fetchLogs = async () => {
     const response = await processingLogsApi.getProcessingLogs({
       page: filters.page,
       limit: filters.limit,
-      status: filters.status === 'all' ? undefined : filters.status,
+      status: filters.status || undefined,
       search: filters.search.trim() || undefined,
-      sortBy: sortBy.value,
-      sortOrder: sortOrder.value,
+      sortBy: filters.sortBy,
+      sortOrder: filters.sortOrder,
     });
 
     logs.value = response.data;
@@ -258,6 +249,7 @@ const refreshData = () => {
 
 const applyFilters = () => {
   filters.page = 1;
+  sync();
   fetchLogs();
 };
 
@@ -269,28 +261,32 @@ const debouncedFilter = () => {
   }
 
   searchTimeout = window.setTimeout(() => {
+    sync();
     fetchLogs();
   }, 300);
 };
 
 const clearFilters = () => {
-  filters.status = 'all';
+  filters.status = '';
   filters.search = '';
   filters.page = 1;
   filters.limit = 25;
-  sortBy.value = 'createdAt';
-  sortOrder.value = 'desc';
+  filters.sortBy = 'createdAt';
+  filters.sortOrder = 'desc';
+  sync();
   fetchLogs();
 };
 
 const handleSort = ({ sortBy: newSortBy, sortOrder: newSortOrder }: { sortBy: string; sortOrder: 'asc' | 'desc' }) => {
-  sortBy.value = (newSortBy as ProcessingLogFilters['sortBy']) || 'createdAt';
-  sortOrder.value = newSortOrder;
+  filters.sortBy = (newSortBy as ProcessingLogFilters['sortBy']) || 'createdAt';
+  filters.sortOrder = newSortOrder;
+  sync();
   fetchLogs();
 };
 
 const handlePageChange = (page: number) => {
   filters.page = page;
+  sync();
   fetchLogs();
 };
 
@@ -321,27 +317,17 @@ const formatRelativeTime = (value: string) => {
   return `${days} day${days === 1 ? '' : 's'} ago`;
 };
 
-const humanizeStatus = (status: string) => {
-  return status.charAt(0).toUpperCase() + status.slice(1);
-};
-
-const getStatusBadgeClass = (status: ProcessingStatus | string) => {
-  switch (status) {
-    case 'success':
-      return 'badge-success';
-    case 'skipped':
-      return 'badge-warning';
-    case 'error':
-      return 'badge-danger';
-    default:
-      return 'badge-gray';
-  }
-};
-
 const truncateDetails = (details: string) => {
   if (!details) return '';
   return details.length > 120 ? `${details.slice(0, 117)}…` : details;
 };
+
+// Reads the query back into `filters` at setup, so a shared link loads already filtered.
+const { sync } = useQueryFilters(
+  filters,
+  ['status', 'search', 'page', 'limit', 'sortBy', 'sortOrder'],
+  fetchLogs,
+);
 
 onMounted(() => {
   fetchLogs();

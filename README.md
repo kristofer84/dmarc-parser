@@ -36,6 +36,10 @@ gh attestation verify oci://ghcr.io/kristofer84/dmarc-parser:latest --repo krist
 | `PUBLIC_ORIGIN` | Only needed when a browser calls the API from a different origin than the UI. |
 | `DATABASE_URL` | Defaults to `file:/app/data/data.db`, inside the mounted volume. |
 
+Appearance is configurable per instance: *Administration → Settings → Branding* sets the
+instance name and the accent colour (the whole palette derives from it at runtime), and the
+header has a light/dark/system toggle that remembers the choice.
+
 All state is the SQLite database in that volume - back it up and you have everything.
 Before exposing it to the internet, put TLS in front and set `COOKIE_SECURE=true`;
 [deploy/README.md](deploy/README.md) is the runbook (nginx, certificate, hardened env).

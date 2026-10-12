@@ -22,6 +22,7 @@
               <th
                 v-for="column in columns"
                 :key="column.key"
+                scope="col"
                 class="table-header-cell"
                 :class="{ 'cursor-pointer': column.sortable }"
                 @click="column.sortable ? handleSort(column.key) : null"
@@ -74,17 +75,12 @@
                   :column="column"
                 >
                   <span v-if="column.type === 'badge'">
-                    <span 
-                      class="badge"
-                      :class="getBadgeClass(getColumnValue(item, column.key))"
-                    >
-                      {{ formatValue(getColumnValue(item, column.key)) }}
-                    </span>
+                    <StatusBadge :status="getColumnValue(item, column.key)" />
                   </span>
-                  <span v-else-if="column.type === 'date'">
+                  <span v-else-if="column.type === 'date'" class="nums">
                     {{ formatDate(getColumnValue(item, column.key)) }}
                   </span>
-                  <span v-else-if="column.type === 'number'">
+                  <span v-else-if="column.type === 'number'" class="nums">
                     {{ formatNumber(getColumnValue(item, column.key)) }}
                   </span>
                   <span v-else-if="column.type === 'percentage'">
@@ -99,13 +95,8 @@
 
             <!-- Empty state -->
             <tr v-else-if="!loading">
-              <td :colspan="columns.length" class="table-cell text-center py-8">
-                <div class="text-gray-400 mb-2">
-                  <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <p class="text-gray-500">{{ emptyMessage || 'No data available' }}</p>
+              <td :colspan="columns.length" class="px-6 py-4">
+                <EmptyState compact icon="inbox" :title="emptyMessage || 'No data available'" />
               </td>
             </tr>
           </tbody>
@@ -116,7 +107,7 @@
     <!-- Pagination -->
     <div 
       v-if="pagination && pagination.pages > 1" 
-      class="bg-white px-4 py-3 border-t border-gray-200 sm:px-6"
+      class="bg-surface px-4 py-3 border-t border-gray-200 sm:px-6"
     >
       <div class="flex items-center justify-between">
         <div class="flex-1 flex justify-between sm:hidden">
@@ -154,7 +145,7 @@
               <button
                 :disabled="pagination.page <= 1"
                 @click="handlePageChange(pagination.page - 1)"
-                class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-surface text-sm font-medium text-gray-500 hover:bg-gray-50"
                 :class="{ 'opacity-50 cursor-not-allowed': pagination.page <= 1 }"
               >
                 Previous
@@ -168,7 +159,7 @@
                 class="relative inline-flex items-center px-4 py-2 border text-sm font-medium"
                 :class="page === pagination.page 
                   ? 'z-10 bg-primary-50 border-primary-500 text-primary-600' 
-                  : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'"
+                  : 'bg-surface border-gray-300 text-gray-500 hover:bg-gray-50'"
               >
                 {{ page }}
               </button>
@@ -176,7 +167,7 @@
               <button
                 :disabled="pagination.page >= pagination.pages"
                 @click="handlePageChange(pagination.page + 1)"
-                class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-surface text-sm font-medium text-gray-500 hover:bg-gray-50"
                 :class="{ 'opacity-50 cursor-not-allowed': pagination.page >= pagination.pages }"
               >
                 Next
@@ -191,6 +182,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import StatusBadge from '@/components/StatusBadge.vue';
+import EmptyState from '@/components/EmptyState.vue';
 
 interface Column {
   key: string;
@@ -267,22 +260,6 @@ const formatDate = (value: string | Date): string => {
 const formatNumber = (value: number): string => {
   if (typeof value !== 'number') return '-';
   return value.toLocaleString();
-};
-
-const getBadgeClass = (value: string): string => {
-  const lowerValue = value?.toLowerCase();
-  
-  if (lowerValue === 'pass' || lowerValue === 'none') {
-    return 'badge-success';
-  }
-  if (lowerValue === 'quarantine' || lowerValue === 'warning') {
-    return 'badge-warning';
-  }
-  if (lowerValue === 'fail' || lowerValue === 'reject') {
-    return 'badge-danger';
-  }
-  
-  return 'badge-gray';
 };
 
 const visiblePages = computed(() => {

@@ -3,6 +3,7 @@ import type {
   ReportSummary,
   DetailedReport,
   DashboardStats,
+  Branding,
   PaginatedResponse,
   ApiError,
   ReportsFilters,
@@ -329,6 +330,13 @@ class ApiClient {
     await this.client.delete(`/users/${id}`);
   }
 
+  // ------------------------------------------------------------------ branding
+  /** Public on the backend: the login screen needs it before a session exists. */
+  async getBranding(): Promise<Branding> {
+    const response = await this.client.get<Branding>('/branding');
+    return response.data;
+  }
+
   // Health check
   async healthCheck(): Promise<{ status: string; timestamp: string; uptime: number }> {
     // Use absolute URL to bypass the /api base URL
@@ -395,6 +403,10 @@ export const settingsApi = {
   list: () => apiClient.getSettings(),
   update: (key: string, value: string) => apiClient.updateSetting(key, value),
   testMailbox: (payload: Parameters<typeof apiClient.testMailbox>[0]) => apiClient.testMailbox(payload),
+};
+
+export const brandingApi = {
+  get: () => apiClient.getBranding(),
 };
 
 export const usersApi = {

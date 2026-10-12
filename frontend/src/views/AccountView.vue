@@ -1,13 +1,10 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <div class="bg-white shadow">
-      <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="py-6">
-          <h1 class="text-3xl font-bold text-gray-900">Account</h1>
-          <p class="mt-2 text-sm text-gray-600">Your sign-in details and password</p>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      title="Account"
+      description="Your sign-in details and password"
+      container-class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8"
+    />
 
     <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       <!-- An administrator-issued password must be replaced before anything else. -->
@@ -33,9 +30,11 @@
             <div>
               <dt class="stat-label">Role</dt>
               <dd class="mt-1">
-                <span class="badge" :class="isAdmin ? 'badge-success' : 'badge-gray'">
-                  {{ isAdmin ? 'Administrator' : 'User' }}
-                </span>
+                <StatusBadge
+                  :status="isAdmin ? 'admin' : 'user'"
+                  kind="user"
+                  :label="isAdmin ? 'Administrator' : 'User'"
+                />
               </dd>
             </div>
           </dl>
@@ -71,16 +70,6 @@
           </p>
         </div>
         <div class="card-body">
-          <div
-            v-if="message"
-            class="mb-4 rounded-md p-3"
-            :class="messageIsError ? 'bg-danger-50' : 'bg-success-50'"
-          >
-            <p class="text-sm" :class="messageIsError ? 'text-danger-700' : 'text-success-700'">
-              {{ message }}
-            </p>
-          </div>
-
           <form class="space-y-4" @submit.prevent="submit">
             <div>
               <label for="current-password" class="block text-sm font-medium text-gray-700 mb-1">
@@ -145,18 +134,20 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import PageHeader from '@/components/PageHeader.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { authApi } from '@/api/client';
 import { useAuth } from '@/composables/useAuth';
+import { useToast } from '@/composables/useToast';
 
 const router = useRouter();
+const toast = useToast();
 const { state, isAdmin, logout, setDomains } = useAuth();
 
 const currentPassword = ref('');
 const newPassword = ref('');
 const confirmPassword = ref('');
 const busy = ref(false);
-const message = ref<string | null>(null);
-const messageIsError = ref(false);
 
 const user = computed(() => state.user);
 const domains = computed(() => state.domains);
@@ -171,12 +162,7 @@ const canSubmit = computed(
 );
 
 const submit = async () => {
-  message.value = null;
-  messageIsError.value = false;
-
   if (newPassword.value !== confirmPassword.value) {
-    message.value = 'The two new passwords do not match.';
-    messageIsError.value = true;
     return;
   }
 
@@ -194,10 +180,9 @@ const submit = async () => {
     state.user = session.user;
     setDomains(session.domains);
 
-    message.value = 'Password changed. Every other signed-in device has been signed out.';
+    toast.success('Password changed. Every other signed-in device has been signed out.');
   } catch (error) {
-    message.value = error instanceof Error ? error.message : 'Could not change the password';
-    messageIsError.value = true;
+    toast.error(error instanceof Error ? error.message : 'Could not change the password');
   } finally {
     busy.value = false;
   }

@@ -1,34 +1,24 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- Header -->
-    <div class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="py-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <h1 class="text-3xl font-bold text-gray-900">DMARC Reports</h1>
-              <p class="mt-2 text-sm text-gray-600">
-                View and analyze detailed DMARC report data
-              </p>
-            </div>
-            <div class="flex space-x-3">
-              <button @click="refreshData" class="btn btn-secondary">
-                <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Refresh
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      title="DMARC Reports"
+      description="View and analyze detailed DMARC report data"
+    >
+      <template #actions>
+        <button @click="refreshData" class="btn btn-secondary">
+          <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Refresh
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- Main content -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- Filters -->
       <div class="mb-6">
-        <div class="bg-white p-4 rounded-lg shadow">
+        <div class="bg-surface p-4 rounded-card shadow-card border border-gray-200">
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label for="domain-filter" class="block text-sm font-medium text-gray-700 mb-1">
@@ -87,8 +77,8 @@
         :data="reports"
         :loading="loading"
         :pagination="pagination || undefined"
-        :sort-by="sortBy"
-        :sort-order="sortOrder"
+        :sort-by="filters.sortBy"
+        :sort-order="filters.sortOrder"
         title="DMARC Reports"
         description="Click on a report to view detailed information"
         empty-message="No DMARC reports found. Try adjusting your filters or check if reports have been processed."
@@ -113,7 +103,7 @@
         </template>
 
         <template #cell-totalMessages="{ value }">
-          <span class="font-medium">{{ value.toLocaleString() }}</span>
+          <span class="font-medium nums">{{ value.toLocaleString() }}</span>
         </template>
 
         <template #cell-spfPassRate="{ value }">
@@ -139,12 +129,7 @@
         </template>
 
         <template #cell-policyAction="{ value }">
-          <span 
-            class="badge"
-            :class="value === 'none' ? 'badge-success' : value === 'quarantine' ? 'badge-warning' : 'badge-danger'"
-          >
-            {{ value }}
-          </span>
+          <StatusBadge :status="value" kind="disposition" />
         </template>
       </DataTable>
 
@@ -175,7 +160,10 @@
 import { ref, reactive, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import DataTable from '@/components/DataTable.vue';
+import PageHeader from '@/components/PageHeader.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { reportsApi } from '@/api/client';
+import { useQueryFilters } from '@/composables/useQueryFilters';
 import type { ReportSummary, PaginatedResponse, ReportsFilters } from '@/types/api';
 
 const router = useRouter();
@@ -184,14 +172,14 @@ const router = useRouter();
 const reports = ref<ReportSummary[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
-const sortBy = ref('startDate');
-const sortOrder = ref<'asc' | 'desc'>('desc');
 
 const filters = reactive<ReportsFilters>({
   domain: '',
   orgName: '',
   page: 1,
   limit: 25,
+  sortBy: 'startDate',
+  sortOrder: 'desc',
 });
 
 const pagination = ref<PaginatedResponse<ReportSummary>['pagination'] | null>(null);
@@ -224,8 +212,6 @@ const loadReports = async () => {
   try {
     const filterParams: ReportsFilters = {
       ...filters,
-      sortBy: sortBy.value,
-      sortOrder: sortOrder.value,
     };
 
     // Remove empty filters
@@ -250,8 +236,9 @@ const loadReports = async () => {
 
 // Event handlers
 const handleSort = ({ sortBy: newSortBy, sortOrder: newSortOrder }: { sortBy: string; sortOrder: 'asc' | 'desc' }) => {
-  sortBy.value = newSortBy;
-  sortOrder.value = newSortOrder;
+  filters.sortBy = newSortBy;
+  filters.sortOrder = newSortOrder;
+  sync();
   loadReports();
 };
 
@@ -261,11 +248,13 @@ const handleRowClick = (report: ReportSummary) => {
 
 const handlePageChange = (page: number) => {
   filters.page = page;
+  sync();
   loadReports();
 };
 
 const applyFilters = () => {
   filters.page = 1; // Reset to first page when filtering
+  sync();
   loadReports();
 };
 
@@ -274,12 +263,16 @@ const clearFilters = () => {
   filters.orgName = '';
   filters.page = 1;
   filters.limit = 25;
+  sync();
   loadReports();
 };
 
 const refreshData = () => {
   loadReports();
 };
+
+// The query is read back into `filters` at setup, so the first load already reflects the URL.
+const { sync } = useQueryFilters(filters, ['domain', 'orgName', 'page', 'limit', 'sortBy', 'sortOrder'], loadReports);
 
 // Utility functions
 const formatDate = (dateString: string): string => {

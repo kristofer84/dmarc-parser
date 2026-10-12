@@ -1,24 +1,12 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <div class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="py-6 flex items-center justify-between">
-          <div>
-            <h1 class="text-3xl font-bold text-gray-900">Users</h1>
-            <p class="mt-2 text-sm text-gray-600">
-              Accounts and the domains each of them may see
-            </p>
-          </div>
-          <button @click="load" class="btn btn-secondary">Refresh</button>
-        </div>
-      </div>
-    </div>
+    <PageHeader title="Users" description="Accounts and the domains each of them may see">
+      <template #actions>
+        <button @click="load" class="btn btn-secondary">Refresh</button>
+      </template>
+    </PageHeader>
 
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <div v-if="notice" class="rounded-md p-3" :class="noticeError ? 'bg-danger-50' : 'bg-success-50'">
-        <p class="text-sm" :class="noticeError ? 'text-danger-700' : 'text-success-700'">{{ notice }}</p>
-      </div>
-
       <!-- Create user -->
       <div class="card">
         <div class="card-header">
@@ -115,13 +103,11 @@
         empty-message="No users"
       >
         <template #cell-role="{ value }">
-          <span class="badge" :class="value === 'admin' ? 'badge-success' : 'badge-gray'">{{ value }}</span>
+          <StatusBadge :status="value" kind="user" />
         </template>
         <template #cell-isActive="{ value, item }">
-          <span class="badge" :class="value ? 'badge-success' : 'badge-danger'">
-            {{ value ? 'Active' : 'Disabled' }}
-          </span>
-          <span v-if="item.lockedUntil" class="badge badge-warning ml-1">locked</span>
+          <StatusBadge :status="value ? 'active' : 'disabled'" :label="value ? 'Active' : 'Disabled'" />
+          <StatusBadge v-if="item.lockedUntil" status="locked" kind="user" class="ml-1" />
         </template>
         <template #cell-domains="{ value }">
           <div class="flex flex-wrap gap-1">
@@ -234,8 +220,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import DataTable from '@/components/DataTable.vue';
+import PageHeader from '@/components/PageHeader.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { usersApi } from '@/api/client';
+import { useToast } from '@/composables/useToast';
 import type { ManagedUser } from '@/types/api';
+
+const toast = useToast();
 
 const columns = [
   { key: 'email', label: 'Email', sortable: false },
@@ -252,8 +243,6 @@ const users = ref<ManagedUser[]>([]);
 const availableDomains = ref<string[]>([]);
 const loading = ref(false);
 const creating = ref(false);
-const notice = ref<string | null>(null);
-const noticeError = ref(false);
 
 const form = reactive<{ email: string; name: string; role: 'admin' | 'user'; password: string; domains: string[] }>({
   email: '',
@@ -288,12 +277,13 @@ const allDomainOptions = computed(() => {
   return [...names].sort();
 });
 
+/** Action outcomes go to the toast queue; nothing here is field-level validation. */
 const setNotice = (text: string, isError = false) => {
-  notice.value = text;
-  noticeError.value = isError;
-  window.setTimeout(() => {
-    notice.value = null;
-  }, 5000);
+  if (isError) {
+    toast.error(text);
+  } else {
+    toast.success(text);
+  }
 };
 
 const load = async () => {

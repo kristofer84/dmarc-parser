@@ -1,18 +1,13 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <div class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="py-6 flex items-center justify-between">
-          <div>
-            <h1 class="text-3xl font-bold text-gray-900">Application settings</h1>
-            <p class="mt-2 text-sm text-gray-600">
-              Options the app reads at runtime — no restart or rebuild needed
-            </p>
-          </div>
-          <button @click="load" class="btn btn-secondary">Refresh</button>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      title="Application settings"
+      description="Options the app reads at runtime — no restart or rebuild needed"
+    >
+      <template #actions>
+        <button @click="load" class="btn btn-secondary">Refresh</button>
+      </template>
+    </PageHeader>
 
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       <div v-if="loading" class="flex items-center justify-center py-12">
@@ -44,8 +39,8 @@
                 <div class="sm:max-w-xl">
                   <div class="flex items-center space-x-2">
                     <h3 class="text-sm font-medium text-gray-900">{{ setting.label }}</h3>
-                    <span v-if="setting.dangerous" class="badge badge-warning">careful</span>
-                    <span v-if="setting.secret && setting.isSet" class="badge badge-success">stored</span>
+                    <StatusBadge v-if="setting.dangerous" status="warn" label="careful" />
+                    <StatusBadge v-if="setting.secret && setting.isSet" status="ok" label="stored" />
                   </div>
                   <p class="mt-1 text-sm text-gray-600">{{ setting.description }}</p>
                   <p class="mt-2 text-xs text-gray-400 font-mono">{{ setting.key }}</p>
@@ -112,13 +107,10 @@
                 </div>
               </div>
 
-              <p v-if="messages[setting.key]" class="mt-2 text-sm" :class="messages[setting.key].error ? 'text-danger-700' : 'text-success-700'">
-                {{ messages[setting.key].text }}
-              </p>
             </div>
           </div>
 
-          <div v-if="category === 'mailbox'" class="px-4 py-5 sm:px-6 bg-gray-50 border-t border-gray-200">
+          <div v-if="category === 'mailbox'" class="px-4 py-5 sm:px-6 bg-surface-muted border-t border-gray-200">
             <div class="flex flex-wrap items-center gap-3">
               <button class="btn btn-secondary text-sm" :disabled="testing" @click="runMailboxTest">
                 <span
@@ -150,11 +142,15 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
+import PageHeader from '@/components/PageHeader.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { settingsApi } from '@/api/client';
 import { useAuth } from '@/composables/useAuth';
+import { useToast } from '@/composables/useToast';
 import type { AppSetting, MailboxTestResult } from '@/types/api';
 
 const { isAdmin } = useAuth();
+const toast = useToast();
 
 const settings = ref<AppSetting[]>([]);
 const categories = ref<string[]>([]);
@@ -162,7 +158,6 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const savingKey = ref<string | null>(null);
 const draft = reactive<Record<string, string>>({});
-const messages = reactive<Record<string, { text: string; error: boolean }>>({});
 const testing = ref(false);
 const testResult = ref<MailboxTestResult | null>(null);
 
@@ -181,7 +176,6 @@ const load = async () => {
     categories.value = result.categories;
     for (const setting of result.data) {
       draft[setting.key] = setting.value;
-      delete messages[setting.key];
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load settings';
@@ -195,7 +189,6 @@ const save = async (setting: AppSetting) => {
   if (setting.secret && !draft[setting.key]) return;
 
   savingKey.value = setting.key;
-  delete messages[setting.key];
 
   try {
     const updated = await settingsApi.update(setting.key, draft[setting.key] ?? '');
@@ -206,12 +199,9 @@ const save = async (setting: AppSetting) => {
       settings.value[index] = merged.secret ? { ...merged, isSet: true } : merged;
     }
     draft[setting.key] = updated.value;
-    messages[setting.key] = { text: 'Saved', error: false };
+    toast.success(`${updated.label} saved`);
   } catch (err) {
-    messages[setting.key] = {
-      text: err instanceof Error ? err.message : 'Could not save',
-      error: true,
-    };
+    toast.error(err instanceof Error ? err.message : 'Could not save');
   } finally {
     savingKey.value = null;
   }
