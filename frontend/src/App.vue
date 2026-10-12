@@ -64,6 +64,17 @@
                 </svg>
                 Forensics
               </router-link>
+              <router-link
+                to="/domains"
+                class="nav-link"
+                :class="{ 'nav-link-active': $route.name === 'Domains' }"
+              >
+                <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18a15 15 0 010-18z" />
+                </svg>
+                Domains
+              </router-link>
               <template v-if="isAdmin">
                 <router-link
                   to="/admin/settings"
@@ -168,6 +179,14 @@
             @click="mobileMenuOpen = false"
           >
             Forensics
+          </router-link>
+          <router-link
+            to="/domains"
+            class="mobile-nav-link"
+            :class="{ 'mobile-nav-link-active': $route.name === 'Domains' }"
+            @click="mobileMenuOpen = false"
+          >
+            Domains
           </router-link>
           <router-link
             to="/account"

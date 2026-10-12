@@ -3,8 +3,9 @@ import { createApp } from './app.js';
 import { config } from './config/env.js';
 import { initializeDatabase, disconnectDatabase } from './db/prisma.js';
 import { EmailProcessor } from './services/emailProcessor.js';
-import { ensureSettingsSeeded } from './services/settings.js';
+import { ensureSettingsSeeded, getBooleanSetting, getNumberSetting } from './services/settings.js';
 import { ensureAdminUser } from './services/auth.js';
+import { runAllChecks, discoverDomains } from './services/domainMonitor.js';
 
 setupLogging();
 
@@ -35,6 +36,50 @@ async function startServer() {
     } catch (error) {
       console.warn('⚠️ Failed to ensure an administrator account exists:', error);
     }
+
+    // Domain DNS checks. The interval is read from settings on every tick rather than fixed
+    // at start, so changing it in the UI takes effect without a restart.
+    // Seed the domain list from the reports already in the database, so a fresh deployment
+    // shows a populated status page instead of an empty one. Idempotent: existing names are
+    // left untouched.
+    try {
+      const discovered = await discoverDomains();
+      if (discovered.added.length > 0) {
+        console.log(
+          `🔎 Added ${discovered.added.length} domain(s) seen in existing reports: ${discovered.added.join(', ')}`,
+        );
+      }
+    } catch (error) {
+      console.warn('⚠️ Domain discovery failed:', error);
+    }
+
+    const DOMAIN_TICK_MS = 15 * 60 * 1000;
+    let lastDomainCheckAt = 0;
+
+    const runDomainChecksIfDue = async (force = false) => {
+      if (!(await getBooleanSetting('domains.autocheckEnabled'))) {
+        return;
+      }
+
+      const intervalMs = (await getNumberSetting('domains.checkIntervalHours')) * 3600_000;
+      if (!force && Date.now() - lastDomainCheckAt < intervalMs) {
+        return;
+      }
+
+      lastDomainCheckAt = Date.now();
+      const result = await runAllChecks();
+      console.log(`🔎 Domain checks: ${result.checked} checked, ${result.failed} failed`);
+    };
+
+    // Shortly after boot, so a fresh deployment shows real results on the status page rather
+    // than "never checked"; the delay keeps it out of the way of the first mail cycle.
+    setTimeout(() => {
+      runDomainChecksIfDue(true).catch((error) => console.warn('⚠️ Initial domain check failed:', error));
+    }, 20_000).unref?.();
+
+    setInterval(() => {
+      runDomainChecksIfDue().catch((error) => console.warn('⚠️ Scheduled domain check failed:', error));
+    }, DOMAIN_TICK_MS).unref?.();
 
     // Create Express app
     const app = createApp();

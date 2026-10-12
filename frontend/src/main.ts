@@ -8,6 +8,7 @@ import DashboardView from './views/DashboardView.vue'
 import ReportListView from './views/ReportListView.vue'
 import ProcessingLogsView from './views/ProcessingLogsView.vue'
 import ForensicsView from './views/ForensicsView.vue'
+import DomainsView from './views/DomainsView.vue'
 import LoginView from './views/LoginView.vue'
 import AdminSettingsView from './views/AdminSettingsView.vue'
 import AdminUsersView from './views/AdminUsersView.vue'
@@ -53,6 +54,11 @@ const router = createRouter({
       path: '/processing-logs',
       name: 'ProcessingLogs',
       component: ProcessingLogsView,
+    },
+    {
+      path: '/domains',
+      name: 'Domains',
+      component: DomainsView,
     },
     {
       path: '/admin/settings',

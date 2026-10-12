@@ -181,3 +181,36 @@ model UserDomain {
   @@index([domain])
   @@map("user_domains")
 }
+
+/// A domain whose mail authentication is checked (MX, SPF, DMARC, DKIM, MTA-STS, ...).
+/// Domains are discovered from the reports that arrive, or added by an administrator.
+model Domain {
+  id            String        @id @default(cuid())
+  name          String        @unique
+  /// JSON array as text: SQLite has no JSON column type here, and the list is tiny.
+  dkimSelectors String        @default("[]")
+  expectedMx    String        @default("[]")
+  monitored     Boolean       @default(true)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  checks        DomainCheck[]
+
+  @@map("domains")
+}
+
+/// One run of the checks, kept so the UI can show what changed since last time.
+model DomainCheck {
+  id          String   @id @default(cuid())
+  domainId    String
+  domain      Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  status      String
+  runAt       DateTime @default(now())
+  durationMs  Int
+  /// The results array from the check report, as JSON text.
+  resultsJson String
+
+  @@index([domainId, runAt])
+  @@map("domain_checks")
+}

@@ -18,6 +18,12 @@ import type {
   AppSetting,
   ManagedUser,
   AvailableDomain,
+  DomainSummary,
+  DomainDetail,
+  DomainCheckReport,
+  DomainHealthSummary,
+  DomainCreateInput,
+  DomainUpdateInput,
 } from '@/types/api';
 
 class ApiClient {
@@ -207,6 +213,51 @@ class ApiClient {
     return response.data;
   }
 
+  // ------------------------------------------------------------------ domain status
+  async getDomains(): Promise<DomainSummary[]> {
+    const response = await this.client.get<{ data: DomainSummary[] }>('/domains');
+    return response.data.data;
+  }
+
+  async getDomainSummary(): Promise<DomainHealthSummary> {
+    const response = await this.client.get<DomainHealthSummary>('/domains/summary');
+    return response.data;
+  }
+
+  async getDomainById(id: string): Promise<DomainDetail> {
+    const response = await this.client.get<DomainDetail>(`/domains/${id}`);
+    return response.data;
+  }
+
+  async checkDomain(id: string): Promise<DomainCheckReport> {
+    const response = await this.client.post<DomainCheckReport>(`/domains/${id}/check`);
+    return response.data;
+  }
+
+  async discoverDomains(): Promise<{ added: string[]; existing: number }> {
+    const response = await this.client.post<{ added: string[]; existing: number }>('/domains/discover');
+    return response.data;
+  }
+
+  async checkAllDomains(): Promise<{ checked: number; failed: number }> {
+    const response = await this.client.post<{ checked: number; failed: number }>('/domains/check-all');
+    return response.data;
+  }
+
+  async createDomain(payload: DomainCreateInput): Promise<DomainSummary> {
+    const response = await this.client.post<{ domain: DomainSummary }>('/domains', payload);
+    return response.data.domain;
+  }
+
+  async updateDomain(id: string, payload: DomainUpdateInput): Promise<DomainSummary> {
+    const response = await this.client.patch<{ domain: DomainSummary }>(`/domains/${id}`, payload);
+    return response.data.domain;
+  }
+
+  async deleteDomain(id: string): Promise<void> {
+    await this.client.delete(`/domains/${id}`);
+  }
+
   // ------------------------------------------------------------------ administration
   async getSettings(): Promise<{ data: AppSetting[]; categories: string[] }> {
     const response = await this.client.get<{ data: AppSetting[]; categories: string[] }>('/settings');
@@ -308,6 +359,18 @@ export const forensicsApi = {
   list: (filters?: ForensicFilters) => apiClient.getForensics(filters),
   getById: (id: string) => apiClient.getForensicById(id),
   summary: () => apiClient.getForensicSummary(),
+};
+
+export const domainsApi = {
+  list: () => apiClient.getDomains(),
+  summary: () => apiClient.getDomainSummary(),
+  getById: (id: string) => apiClient.getDomainById(id),
+  check: (id: string) => apiClient.checkDomain(id),
+  discover: () => apiClient.discoverDomains(),
+  checkAll: () => apiClient.checkAllDomains(),
+  create: (payload: DomainCreateInput) => apiClient.createDomain(payload),
+  update: (id: string, payload: DomainUpdateInput) => apiClient.updateDomain(id, payload),
+  remove: (id: string) => apiClient.deleteDomain(id),
 };
 
 export const settingsApi = {

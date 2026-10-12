@@ -239,3 +239,78 @@ export interface AvailableDomain {
   domain: string;
   assignedUsers: number;
 }
+
+// ---------------------------------------------------------------- domain status
+export type DomainCheckStatus = 'ok' | 'warn' | 'error' | 'info' | 'skipped';
+
+export interface DomainCheckResult {
+  /** Stable slug, e.g. 'mx', 'spf', 'dmarc'. DKIM uses 'dkim:<selector>'. */
+  id: string;
+  label: string;
+  status: DomainCheckStatus;
+  summary: string;
+  details?: string[];
+  fix?: string;
+}
+
+export interface DomainSummary {
+  id: string;
+  name: string;
+  monitored: boolean;
+  dkimSelectors: string[];
+  expectedMx: string[];
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastCheck: {
+    status: DomainCheckStatus;
+    runAt: string;
+    durationMs: number;
+    results: DomainCheckResult[];
+  } | null;
+}
+
+export interface DomainCheckReport {
+  domain: string;
+  checkedAt: string;
+  durationMs: number;
+  status: DomainCheckStatus;
+  results: DomainCheckResult[];
+  dkimSelectors: string[];
+}
+
+export interface DomainHistoryEntry {
+  status: DomainCheckStatus;
+  runAt: string;
+  durationMs: number;
+  results: DomainCheckResult[];
+}
+
+export interface DomainDetail {
+  domain: DomainSummary;
+  history: DomainHistoryEntry[];
+}
+
+export interface DomainHealthSummary {
+  total: number;
+  ok: number;
+  warn: number;
+  error: number;
+  neverChecked: number;
+  needsAttention: Array<{ id: string; name: string; status: DomainCheckStatus; problems: string[] }>;
+}
+
+export interface DomainCreateInput {
+  name: string;
+  dkimSelectors?: string[];
+  expectedMx?: string[];
+  notes?: string;
+  monitored?: boolean;
+}
+
+export interface DomainUpdateInput {
+  dkimSelectors?: string[];
+  expectedMx?: string[];
+  notes?: string;
+  monitored?: boolean;
+}

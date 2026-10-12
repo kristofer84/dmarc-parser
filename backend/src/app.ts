@@ -1,10 +1,13 @@
 import express from 'express';
 import cors from 'cors';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { config } from './config/env.js';
 import reportsRouter from './routes/reports.js';
 import summaryRouter from './routes/summary.js';
 import processingLogsRouter from './routes/processingLogs.js';
 import forensicsRouter from './routes/forensics.js';
+import domainsRouter from './routes/domains.js';
 import authRouter from './routes/auth.js';
 import usersRouter from './routes/users.js';
 import settingsRouter from './routes/settings.js';
@@ -146,8 +149,29 @@ export function createApp(): express.Application {
   app.use('/api/summary', summaryRouter);
   app.use('/api/processing-logs', processingLogsRouter);
   app.use('/api/forensics', forensicsRouter);
+  app.use('/api/domains', domainsRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/settings', settingsRouter);
+
+  // All-in-one image: serve the built SPA from the same origin. The port is then the only
+  // thing a deployer needs to expose, and browser requests to /api are same-origin, so CORS
+  // never enters the picture. Absent in the two-container setup, where nginx does this.
+  const staticDir = process.env.STATIC_DIR?.trim();
+  const indexPath = staticDir ? join(staticDir, 'index.html') : null;
+
+  if (staticDir && indexPath && existsSync(indexPath)) {
+    console.log(`🖼️ Serving the built frontend from ${staticDir}`);
+    app.use(express.static(staticDir, { index: false, maxAge: '1h' }));
+
+    app.get('*', (req, res, next) => {
+      // Unknown API paths must keep answering JSON, not the SPA shell.
+      if (req.path.startsWith('/api/') || req.path.startsWith('/health')) {
+        next();
+        return;
+      }
+      res.sendFile(indexPath);
+    });
+  }
 
   // 404 handler
   app.use('*', (req, res) => {

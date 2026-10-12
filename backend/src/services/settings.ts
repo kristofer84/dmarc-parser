@@ -19,7 +19,7 @@ export interface SettingDefinition {
   default: string;
   label: string;
   description: string;
-  category: 'forensics' | 'processing' | 'auth';
+  category: 'forensics' | 'processing' | 'auth' | 'domains';
   min?: number;
   max?: number;
   /** Changing this one is worth a warning in the UI. */
@@ -73,6 +73,25 @@ export const SETTINGS: SettingDefinition[] = [
     description:
       'Pause ingestion without stopping the container. Takes effect on the next cycle; a cycle already running is allowed to finish.',
     category: 'processing',
+  },
+  {
+    key: 'domains.autocheckEnabled',
+    type: 'boolean',
+    default: 'true',
+    label: 'Check domain DNS records on a schedule',
+    description:
+      'Re-runs the MX/SPF/DMARC/DKIM/MTA-STS checks for every monitored domain in the background, so the domain status page is already populated when you open it.',
+    category: 'domains',
+  },
+  {
+    key: 'domains.checkIntervalHours',
+    type: 'number',
+    default: '24',
+    min: 1,
+    max: 720,
+    label: 'Domain check interval (hours)',
+    description: 'How often the background check runs. Records change rarely; daily is plenty.',
+    category: 'domains',
   },
   {
     key: 'auth.registrationOpen',
