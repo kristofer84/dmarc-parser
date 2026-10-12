@@ -1,60 +1,59 @@
 /** @type {import('tailwindcss').Config} */
+
+// Every colour resolves through a CSS variable rather than a literal hex. Two things fall out
+// of that: one `dark` class on <html> re-themes the entire app including the existing
+// bg-gray-50 / text-gray-900 / border-gray-200 usage in the views, and a deployment can
+// override any value at runtime (see --accent) without a rebuild.
+const ramp = (name, steps) =>
+  Object.fromEntries(
+    steps.map((step) => [step, `rgb(var(--color-${name}-${step}) / <alpha-value>)`]),
+  );
+
+const STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+
 export default {
   content: [
-    "./index.html",
-    "./src/**/*.{vue,js,ts,jsx,tsx}",
+    './index.html',
+    './src/**/*.{vue,js,ts,jsx,tsx}',
   ],
+  // Toggled by adding/removing `dark` on <html>, so the theme can also be forced
+  // regardless of the OS preference.
+  darkMode: 'class',
+  // The `.dark` block in style.css carries the dark token values. It is a class selector that
+  // never appears in a template - JavaScript toggles it - so without this Tailwind discards it
+  // as unused and the theme silently does nothing.
+  safelist: ['dark'],
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
+        gray: ramp('gray', STEPS),
+        primary: ramp('primary', STEPS),
+        success: ramp('success', STEPS),
+        warning: ramp('warning', STEPS),
+        danger: ramp('danger', STEPS),
+        accent: {
+          DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
+          foreground: 'rgb(var(--accent-fg) / <alpha-value>)',
         },
-        success: {
-          50: '#f0fdf4',
-          100: '#dcfce7',
-          200: '#bbf7d0',
-          300: '#86efac',
-          400: '#4ade80',
-          500: '#22c55e',
-          600: '#16a34a',
-          700: '#15803d',
-          800: '#166534',
-          900: '#14532d',
+        // Semantic surfaces. `white` is deliberately left alone because `text-white` on a
+        // primary button must stay white in both themes; the card/table surfaces use these
+        // instead so they can invert.
+        surface: {
+          DEFAULT: 'rgb(var(--surface) / <alpha-value>)',
+          muted: 'rgb(var(--surface-muted) / <alpha-value>)',
         },
-        warning: {
-          50: '#fffbeb',
-          100: '#fef3c7',
-          200: '#fde68a',
-          300: '#fcd34d',
-          400: '#fbbf24',
-          500: '#f59e0b',
-          600: '#d97706',
-          700: '#b45309',
-          800: '#92400e',
-          900: '#78350f',
-        },
-        danger: {
-          50: '#fef2f2',
-          100: '#fee2e2',
-          200: '#fecaca',
-          300: '#fca5a5',
-          400: '#f87171',
-          500: '#ef4444',
-          600: '#dc2626',
-          700: '#b91c1c',
-          800: '#991b1b',
-          900: '#7f1d1d',
-        },
+      },
+      fontFamily: {
+        sans: ['InterVariable', 'Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'JetBrains Mono', 'Menlo', 'Consolas', 'monospace'],
+      },
+      boxShadow: {
+        // Softer than Tailwind's default shadow-sm, which reads heavy on the card borders.
+        card: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+        pop: '0 8px 24px -6px rgb(0 0 0 / 0.18)',
+      },
+      borderRadius: {
+        card: '0.625rem',
       },
     },
   },

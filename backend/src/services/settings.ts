@@ -19,11 +19,13 @@ export interface SettingDefinition {
   default: string;
   label: string;
   description: string;
-  category: 'forensics' | 'processing' | 'auth' | 'domains' | 'mailbox';
+  category: 'forensics' | 'processing' | 'auth' | 'domains' | 'mailbox' | 'branding';
   min?: number;
   max?: number;
   /** Never returned to a client; the UI shows whether a value is stored instead. */
   secret?: boolean;
+  /** Optional shape check for string settings (e.g. a colour must look like a colour). */
+  pattern?: RegExp;
   /** Changing this one is worth a warning in the UI. */
   dangerous?: boolean;
 }
@@ -141,6 +143,24 @@ export const SETTINGS: SettingDefinition[] = [
       'On by default. Turning it off accepts any certificate, which makes an interception or a wrong hostname invisible - only do it for a server with a self-signed certificate.',
     category: 'mailbox',
     dangerous: true,
+  },
+  {
+    key: 'branding.instanceName',
+    type: 'string',
+    default: 'DMARC Viewer',
+    label: 'Instance name',
+    description: 'Shown in the header, the browser tab and the sign-in screen.',
+    category: 'branding',
+  },
+  {
+    key: 'branding.accent',
+    type: 'string',
+    default: '#4f46e5',
+    label: 'Accent colour',
+    description:
+      'Brand colour as a hex value, applied to buttons, links and highlights. The whole palette is derived from it at runtime, so no rebuild is needed.',
+    category: 'branding',
+    pattern: /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i,
   },
   {
     key: 'auth.registrationOpen',
@@ -305,6 +325,13 @@ export function validateSettingValue(definition: SettingDefinition, value: strin
       );
     }
     return String(parsed);
+  }
+
+  if (definition.pattern && !definition.pattern.test(raw)) {
+    throw Object.assign(
+      new Error(`Setting ${definition.key} does not look right (expected ${definition.pattern})`),
+      { statusCode: 400, code: 'VALIDATION_ERROR' },
+    );
   }
 
   return raw;

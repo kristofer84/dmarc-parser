@@ -9,6 +9,7 @@ import processingLogsRouter from './routes/processingLogs.js';
 import forensicsRouter from './routes/forensics.js';
 import domainsRouter from './routes/domains.js';
 import authRouter from './routes/auth.js';
+import brandingRouter from './routes/branding.js';
 import usersRouter from './routes/users.js';
 import settingsRouter from './routes/settings.js';
 import { attachUser, type AuthenticatedRequest } from './middleware/auth.js';
@@ -148,6 +149,8 @@ export function createApp(): express.Application {
 
   // API routes
   app.use('/api/auth', authRouter);
+  // Public on purpose (instance name + accent for the sign-in screen); see routes/branding.ts.
+  app.use('/api/branding', brandingRouter);
   app.use('/api/reports', reportsRouter);
   app.use('/api/summary', summaryRouter);
   app.use('/api/processing-logs', processingLogsRouter);

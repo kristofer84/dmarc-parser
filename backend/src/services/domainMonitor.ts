@@ -33,7 +33,12 @@ export interface DomainSummary {
     durationMs: number;
     results: DomainCheckResult[];
   } | null;
+  /** Oldest-first status trail for a trend sparkline, so the list needs no per-row request. */
+  recent: Array<{ status: CheckStatus; runAt: string }>;
 }
+
+/** How many past runs the list carries per domain. */
+export const RECENT_CHECK_LIMIT = 14;
 
 export interface DomainHealthSummary {
   total: number;
@@ -113,6 +118,10 @@ function serialize(
           results: withResults ? (JSON.parse(latest.resultsJson) as DomainCheckResult[]) : [],
         }
       : null,
+    // Oldest first, which is the order a sparkline wants.
+    recent: [...(row.checks ?? [])]
+      .reverse()
+      .map((check) => ({ status: check.status as CheckStatus, runAt: check.runAt.toISOString() })),
   };
 }
 
@@ -121,7 +130,7 @@ export async function listDomains(scope: string[] | null = null): Promise<Domain
   const rows = await prisma.domain.findMany({
     where: scope === null ? {} : { name: { in: scope } },
     orderBy: { name: 'asc' },
-    include: { checks: { orderBy: { runAt: 'desc' }, take: 1 } },
+    include: { checks: { orderBy: { runAt: 'desc' }, take: RECENT_CHECK_LIMIT } },
   });
 
   return rows.map((row) => serialize(row));
