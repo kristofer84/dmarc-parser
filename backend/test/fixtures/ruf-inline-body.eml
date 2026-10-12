@@ -1,0 +1,17 @@
+From: no-reply@example-isp.net
+To: dmarc@xcds.net
+Subject: Authentication failure report
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Feedback-Type: auth-failure
+User-Agent: ExampleISP-Forensics/2.1
+Version: 1
+Original-Mail-From: <phish@xcds.net>
+Original-Rcpt-To: <victim@example-isp.net>
+Arrival-Date: Sat, 11 Oct 2026 19:05:00 +0200
+Authentication-Results: mx.example-isp.net; spf=fail smtp.mailfrom=xcds.net;
+ dkim=none; dmarc=fail header.from=xcds.net
+Source-IP: 192.0.2.55
+Reported-Domain: xcds.net
+Identity-Alignment: spf(fail, not aligned)

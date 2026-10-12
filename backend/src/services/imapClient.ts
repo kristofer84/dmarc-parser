@@ -1,6 +1,7 @@
 import Imap from 'node-imap';
 import { simpleParser, ParsedMail, Attachment } from 'mailparser';
 import { config } from '../config/env.js';
+import { RufParser } from './rufParser.js';
 
 export interface EmailMessage {
   uid: number;
@@ -8,12 +9,20 @@ export interface EmailMessage {
   from: string;
   date: Date;
   attachments: EmailAttachment[];
+  /** Message-ID of the mail itself, used to deduplicate forensic reports. */
+  messageId?: string | null;
+  /** Authentication-Results header of the mail itself, if the receiving MTA added one. */
+  authenticationResults?: string | null;
 }
 
 export interface EmailAttachment {
   filename: string;
   contentType: string;
   content: Buffer;
+  /** Aggregate (rua) report unless marked otherwise. */
+  kind?: 'aggregate' | 'forensic';
+  /** For forensic reports: the message/rfc822 the failure is about, when attached. */
+  reportedMessage?: Buffer | null;
 }
 
 export class ImapClient {
@@ -283,12 +292,15 @@ export class ImapClient {
 
               const emailMessage = await this.parseEmailMessage(parsed, messageUid);
               
-              // Only include messages with DMARC attachments
-              if (this.hasDmarcAttachment(emailMessage)) {
+              // Only include messages that carry an aggregate or forensic DMARC report
+              const forensicCount = emailMessage.attachments.filter((a) => a.kind === 'forensic').length;
+              const aggregateCount = emailMessage.attachments.length - forensicCount;
+
+              if (this.hasReportAttachment(emailMessage)) {
                 messages.push(emailMessage);
-                console.log(`  ✅ Message ${messageUid} included (has ${emailMessage.attachments.length} DMARC attachment(s))`);
+                console.log(`  ✅ Message ${messageUid} included (${aggregateCount} aggregate, ${forensicCount} forensic report(s))`);
               } else {
-                console.log(`  ⏭️ Message ${messageUid} filtered out (no DMARC attachments found)`);
+                console.log(`  ⏭️ Message ${messageUid} filtered out (no DMARC report found)`);
                 console.log(`     From: ${emailMessage.from}, Subject: ${emailMessage.subject}`);
               }
               
@@ -321,6 +333,7 @@ export class ImapClient {
 
   private async parseEmailMessage(parsed: ParsedMail, uid: number): Promise<EmailMessage> {
     const attachments: EmailAttachment[] = [];
+    const reportedMessages: Buffer[] = [];
 
     if (parsed.attachments) {
       console.log(`📎 Found ${parsed.attachments.length} attachment(s) in message ${uid}`);
@@ -328,8 +341,28 @@ export class ImapClient {
         const filename = attachment.filename || 'unknown';
         const contentType = attachment.contentType || 'unknown';
         let content = attachment.content;
+
+        // A forensic report's failing message. Not a report itself - it is handed to the
+        // feedback-report part below, so it must not reach the aggregate XML parser.
+        if (contentType.toLowerCase() === 'message/rfc822' && content && content.length > 0) {
+          console.log(`  📄 Embedded message (${content.length} bytes) - the mail a forensic report is about`);
+          reportedMessages.push(content);
+          continue;
+        }
+
         console.log(`  - Attachment: ${filename}, Content-Type: ${contentType}, Size: ${content?.length || 0} bytes`);
-        
+
+        if (this.isForensicAttachment(attachment)) {
+          console.log(`  🔎 Recognized as DMARC forensic (RUF) report: ${filename}`);
+          attachments.push({
+            filename: filename,
+            contentType: contentType,
+            content: content,
+            kind: 'forensic',
+          });
+          continue;
+        }
+
         if (this.isDmarcAttachment(attachment)) {
           console.log(`  ✅ Recognized as DMARC attachment: ${filename}`);
           
@@ -351,9 +384,31 @@ export class ImapClient {
             filename: filename,
             contentType: contentType,
             content: content,
+            kind: 'aggregate',
           });
         } else {
           console.log(`  ⏭️ Skipped attachment: ${filename} (not recognized as DMARC report)`);
+        }
+      }
+    }
+
+    // Some reporters send no message/feedback-report part at all and put the ARF fields in
+    // the message body instead - seen from smaller ISPs.
+    const hasForensicPart = attachments.some((a) => a.kind === 'forensic');
+    if (!hasForensicPart && RufParser.looksLikeFeedbackReport(parsed.text)) {
+      console.log(`  🔎 Found DMARC forensic (RUF) fields in the message body (no feedback-report part)`);
+      attachments.push({
+        filename: 'feedback-report.txt',
+        contentType: 'message/feedback-report',
+        content: Buffer.from(parsed.text ?? '', 'utf8'),
+        kind: 'forensic',
+      });
+    }
+
+    if (reportedMessages.length > 0) {
+      for (const attachment of attachments) {
+        if (attachment.kind === 'forensic' && !attachment.reportedMessage) {
+          attachment.reportedMessage = reportedMessages[0];
         }
       }
     }
@@ -364,7 +419,46 @@ export class ImapClient {
       from: parsed.from?.text || '',
       date: parsed.date || new Date(),
       attachments,
+      messageId: parsed.messageId ?? null,
+      authenticationResults: this.getHeaderText(parsed, 'authentication-results'),
     };
+  }
+
+  /** mailparser hands back a string, an array of strings, or a structured object depending on the header. */
+  private getHeaderText(parsed: ParsedMail, name: string): string | null {
+    const value = parsed.headers.get(name);
+    if (value === undefined || value === null) {
+      return null;
+    }
+    if (typeof value === 'string') {
+      return value.trim() || null;
+    }
+    if (Array.isArray(value)) {
+      const parts = value.filter((v): v is string => typeof v === 'string');
+      return parts.length > 0 ? parts.join('; ') : null;
+    }
+    return null;
+  }
+
+  /** True for the ARF part of a DMARC forensic (RUF) report. */
+  private isForensicAttachment(attachment: Attachment): boolean {
+    const contentType = (attachment.contentType || '').toLowerCase();
+    const filename = (attachment.filename || '').toLowerCase();
+
+    if (!attachment.content || attachment.content.length === 0) {
+      return false;
+    }
+
+    if (contentType === 'message/feedback-report') {
+      return true;
+    }
+
+    // Some reporters use a named part instead of the registered content type.
+    if (filename.includes('feedback-report')) {
+      return true;
+    }
+
+    return false;
   }
 
   private isDmarcAttachment(attachment: Attachment): boolean {
@@ -492,7 +586,7 @@ export class ImapClient {
     return preview.startsWith('<');
   }
 
-  private hasDmarcAttachment(message: EmailMessage): boolean {
+  private hasReportAttachment(message: EmailMessage): boolean {
     return message.attachments.length > 0;
   }
 

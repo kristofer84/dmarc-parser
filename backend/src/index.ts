@@ -3,6 +3,7 @@ import { createApp } from './app.js';
 import { config } from './config/env.js';
 import { initializeDatabase, disconnectDatabase } from './db/prisma.js';
 import { EmailProcessor } from './services/emailProcessor.js';
+import { ensureSettingsSeeded } from './services/settings.js';
 
 setupLogging();
 
@@ -18,6 +19,15 @@ async function startServer() {
 
     // Initialize database
     await initializeDatabase();
+
+    try {
+      const seeded = await ensureSettingsSeeded();
+      if (seeded > 0) {
+        console.log(`⚙️ Seeded ${seeded} application setting(s) with their defaults`);
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to seed application settings:', error);
+    }
 
     // Create Express app
     const app = createApp();
@@ -47,7 +57,9 @@ async function startServer() {
     console.log('🔄 Running initial email processing...');
     try {
       const initialResult = await emailProcessor.processEmails();
-      console.log(`📊 Initial processing: ${initialResult.processed} processed, ${initialResult.errors} errors, ${initialResult.skipped} skipped`);
+      console.log(
+        `📊 Initial processing: ${initialResult.processed} aggregate, ${initialResult.forensic} forensic, ${initialResult.errors} errors, ${initialResult.skipped} skipped`,
+      );
     } catch (error) {
       console.warn('⚠️ Initial email processing failed (this is normal if IMAP credentials are not configured):', error);
     }

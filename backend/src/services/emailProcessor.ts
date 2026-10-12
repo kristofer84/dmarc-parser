@@ -1,6 +1,8 @@
 import { ImapClient, EmailMessage, EmailAttachment } from './imapClient.js';
 import { DmarcParser } from './dmarcParser.js';
+import { RufParser } from './rufParser.js';
 import { prisma } from '../db/prisma.js';
+import { getBooleanSetting } from './settings.js';
 import {
   recordProcessingSuccess,
   recordProcessingFailure,
@@ -9,27 +11,39 @@ import {
 
 export interface ProcessingResult {
   processed: number;
+  forensic: number;
   errors: number;
   skipped: number;
   details: Array<{
     status: 'success' | 'error' | 'skipped';
     message: string;
     reportId?: string;
+    forensicReportId?: string;
   }>;
+}
+
+/** Network mailboxes render senders as `Name <addr>`; we only want the address. */
+function extractEmailAddress(from: string): string | null {
+  const match = from.match(/<([^>]+)>/);
+  const address = (match ? match[1] : from).trim();
+  return address.length > 0 ? address : null;
 }
 
 export class EmailProcessor {
   private imapClient: ImapClient;
   private dmarcParser: DmarcParser;
+  private rufParser: RufParser;
 
   constructor() {
     this.imapClient = new ImapClient();
     this.dmarcParser = new DmarcParser();
+    this.rufParser = new RufParser();
   }
 
   async processEmails(): Promise<ProcessingResult> {
     const result: ProcessingResult = {
       processed: 0,
+      forensic: 0,
       errors: 0,
       skipped: 0,
       details: [],
@@ -91,7 +105,9 @@ export class EmailProcessor {
       }
 
       console.log('✅ Email processing completed');
-      console.log(`📊 Results: ${result.processed} processed, ${result.errors} errors, ${result.skipped} skipped`);
+      console.log(
+        `📊 Results: ${result.processed} aggregate, ${result.forensic} forensic, ${result.errors} errors, ${result.skipped} skipped`,
+      );
 
       recordProcessingSuccess(result);
 
@@ -119,7 +135,11 @@ export class EmailProcessor {
     // Process each attachment
     for (const attachment of message.attachments) {
       try {
-        const attachmentResult = await this.processAttachment(attachment, message, result);
+        const attachmentResult =
+          attachment.kind === 'forensic'
+            ? await this.processForensicAttachment(attachment, message, result)
+            : await this.processAttachment(attachment, message, result);
+
         if (attachmentResult === 'success' || attachmentResult === 'skipped') {
           hasSuccessfulAttachment = true;
         }
@@ -134,6 +154,106 @@ export class EmailProcessor {
     }
 
     return hasSuccessfulAttachment;
+  }
+
+  /**
+   * Forensic (RUF) reports describe one failing message each, so they are stored one row per
+   * report rather than aggregated. Returns 'ignored' when forensic processing is switched off,
+   * which deliberately leaves the mail unread and in place.
+   */
+  private async processForensicAttachment(
+    attachment: EmailAttachment,
+    message: EmailMessage,
+    result: ProcessingResult,
+  ): Promise<'success' | 'skipped' | 'ignored'> {
+    if (!(await getBooleanSetting('forensics.enabled'))) {
+      console.log('⏸️ Forensic report processing is disabled in settings - leaving the message unread');
+      return 'ignored';
+    }
+
+    await this.createProcessingLog({
+      message,
+      attachment,
+      status: 'started',
+      details: `Processing forensic report ${attachment.filename}`,
+    });
+
+    try {
+      const reportData = await this.rufParser.parseAndValidate(attachment.content.toString('utf8'), {
+        reportedMessageRaw: attachment.reportedMessage ?? null,
+        reportMessageId: message.messageId ?? null,
+        reporterEmail: extractEmailAddress(message.from),
+        reportAuthenticationResults: message.authenticationResults ?? null,
+        storeRawFeedback: await getBooleanSetting('forensics.storeRawFeedback'),
+        storeFullHeaders: await getBooleanSetting('forensics.storeFullHeaders'),
+        storeReportedMessage: await getBooleanSetting('forensics.storeReportedMessage'),
+      });
+
+      const existing = await prisma.forensicReport.findUnique({
+        where: { dedupKey: reportData.dedupKey },
+      });
+
+      if (existing) {
+        console.log(`⏭️ Forensic report ${reportData.dedupKey} already exists, skipping`);
+        await this.createProcessingLog({
+          message,
+          attachment,
+          status: 'skipped',
+          details: `Forensic report ${reportData.dedupKey} already exists`,
+          forensicReportId: existing.id,
+        });
+        result.skipped++;
+        result.details.push({
+          status: 'skipped',
+          message: `Forensic report for ${reportData.domain} already exists`,
+          forensicReportId: existing.id,
+        });
+        return 'skipped';
+      }
+
+      const saved = await prisma.forensicReport.create({
+        data: this.rufParser.transformToDbFormat(reportData, message.uid),
+      });
+
+      console.log(
+        `✅ Stored forensic report ${saved.id} for ${saved.domain} (source ${saved.sourceIp ?? 'unknown'}, spf=${reportData.spfResult ?? '?'} dkim=${reportData.dkimResult ?? '?'} dmarc=${reportData.dmarcResult ?? '?'})`,
+      );
+      if (!reportData.reportAuthenticated) {
+        console.warn(`   ⚠️ Report mail did not authenticate - treat the claim as unverified`);
+      }
+
+      await this.createProcessingLog({
+        message,
+        attachment,
+        status: 'success',
+        details: `Stored forensic report ${saved.id} for domain ${reportData.domain}`,
+        forensicReportId: saved.id,
+      });
+
+      result.forensic++;
+      result.details.push({
+        status: 'success',
+        message: `Stored forensic report for ${reportData.domain} from ${reportData.reporter ?? 'unknown reporter'}`,
+        forensicReportId: saved.id,
+      });
+      return 'success';
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      console.error(`❌ Forensic report processing failed: ${errorMessage}`);
+      await this.createProcessingLog({
+        message,
+        attachment,
+        status: 'error',
+        details: `Forensic report processing failed: ${errorMessage}`,
+      });
+      result.errors++;
+      result.details.push({
+        status: 'error',
+        message: `Failed to process forensic report ${attachment.filename}: ${errorMessage}`,
+      });
+      throw new Error(`Forensic report processing failed: ${errorMessage}`);
+    }
   }
 
   private async processAttachment(
@@ -214,6 +334,7 @@ export class EmailProcessor {
     status: 'started' | 'success' | 'skipped' | 'error';
     details?: string;
     reportId?: string;
+    forensicReportId?: string;
   }): Promise<void> {
     try {
       await prisma.processingLog.create({
@@ -223,6 +344,7 @@ export class EmailProcessor {
           status: params.status,
           details: params.details,
           reportId: params.reportId,
+          forensicReportId: params.forensicReportId,
         },
       });
     } catch (error) {
@@ -294,8 +416,10 @@ export class EmailProcessor {
         console.log('🔄 Scheduled processing starting...');
         const result = await this.processEmails();
 
-        if (result.processed > 0 || result.errors > 0) {
-          console.log(`📊 Scheduled processing completed: ${result.processed} processed, ${result.errors} errors`);
+        if (result.processed > 0 || result.forensic > 0 || result.errors > 0) {
+          console.log(
+            `📊 Scheduled processing completed: ${result.processed} aggregate, ${result.forensic} forensic, ${result.errors} errors`,
+          );
         }
 
         const upcomingRun = new Date(Date.now() + intervalMs);

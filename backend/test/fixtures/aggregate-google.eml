@@ -1,0 +1,18 @@
+From: noreply-dmarc-support@google.com
+To: dmarc@xcds.net
+Subject: Report Domain: xcds.net Submitter: google.com Report-ID: 8196583754901381650
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="g1"
+
+--g1
+Content-Type: text/plain; charset="UTF-8"
+
+This is an aggregate DMARC report.
+
+--g1
+Content-Type: application/zip; name="google.com!xcds.net!1791244800!1791331199.zip"
+Content-Disposition: attachment; filename="google.com!xcds.net!1791244800!1791331199.zip"
+Content-Transfer-Encoding: base64
+
+UEsDBAoAAAAAAA==
+--g1--

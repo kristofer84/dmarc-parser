@@ -10,6 +10,7 @@
 
 export interface ProcessingResultSummary {
   processed: number;
+  forensic: number;
   errors: number;
   skipped: number;
 }
@@ -56,6 +57,7 @@ export function recordProcessingSuccess(result: ProcessingResultSummary): void {
   state.lastCompletedAt = new Date();
   state.lastResult = {
     processed: result.processed,
+    forensic: result.forensic,
     errors: result.errors,
     skipped: result.skipped,
   };

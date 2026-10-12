@@ -51,8 +51,81 @@ model ProcessingLog {
   details         String?
   reportId        String?
   report          Report?   @relation(fields: [reportId], references: [id])
+  forensicReportId String?
+  forensicReport  ForensicReport? @relation(fields: [forensicReportId], references: [id])
 
   @@index([createdAt])
   @@index([status])
   @@map("processing_logs")
+}
+
+/// Forensic (RUF) reports - per-message authentication failures, RFC 5965 / RFC 7489 7.2.
+/// Unlike aggregate reports these describe individual messages, so one mail can produce one row.
+model ForensicReport {
+  id                  String    @id @default(cuid())
+  /// Dedup key: the report mail's Message-ID when present, else a hash of the identifying fields.
+  dedupKey            String    @unique
+  /// The domain the report is about (Reported-Domain).
+  domain              String
+  reportedDomain      String?
+  /// Best-effort identity of the reporting organisation.
+  reporter            String?
+  reporterEmail       String?
+  reportingMta        String?
+  feedbackType        String
+  reportVersion       String?
+  userAgent           String?
+  arrivalDate         DateTime?
+  sourceIp            String?
+  originalMailFrom    String?
+  originalRcptTo      String?
+  originalEnvelopeId  String?
+  incidents           String?
+  /// Parsed out of Authentication-Results - dmarc is often absent in RUF.
+  spfResult           String?
+  dkimResult          String?
+  dmarcResult         String?
+  authResults         String?
+  dkimDomain          String?
+  dkimIdentity        String?
+  dkimSelector        String?
+  identityAlignment   String?
+  /// Identifying headers of the reported message (always kept).
+  reportedFrom        String?
+  reportedTo          String?
+  reportedSubject     String?
+  reportedDate        DateTime?
+  reportedMessageId   String?
+  /// Full header block of the reported message - only when forensic.storeFullHeaders is enabled.
+  reportedHeaders     String?
+  /// Plain-text body of the reported message, truncated - only when forensic.storeReportedMessage is enabled.
+  reportedBody        String?
+  /// Raw feedback-report block - only when forensic.storeRawFeedback is enabled.
+  rawFeedback         String?
+  /// Whether the report mail itself authenticated (DKIM per mailparser). The mailbox is
+  /// world-writable, so an unauthenticated report is a claim, not a fact.
+  reportAuthenticated Boolean   @default(false)
+  reportAuthDetail    String?
+  sourceMessageId     String?
+  sourceMessageUid    Int?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  processingLogs      ProcessingLog[]
+
+  @@index([domain])
+  @@index([arrivalDate])
+  @@index([sourceIp])
+  @@index([createdAt])
+  @@map("forensic_reports")
+}
+
+/// Runtime application options, editable from the admin UI.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@map("settings")
 }

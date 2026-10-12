@@ -1,0 +1,23 @@
+From: dmarc-reports@mail.ru
+To: dmarc@xcds.net
+Subject: DMARC failure report for xcds.net
+MIME-Version: 1.0
+Content-Type: multipart/report; boundary="b2"; report-type=feedback-report
+
+--b2
+Content-Type: text/plain
+
+Authentication failure report.
+
+--b2
+Content-Type: message/feedback-report
+
+Feedback-Type: auth-failure
+Version: 1
+Original-Mail-From: <forged@xcds.net>
+Arrival-Date: Fri, 11 Oct 2026 08:30:00 +0300
+Authentication-Results: mx.mail.ru; spf=fail; dkim=none
+Source-IP: 198.51.100.7
+Reported-Domain: xcds.net
+
+--b2--

@@ -1,0 +1,52 @@
+From: postmaster@outlook.com
+To: dmarc@xcds.net
+Subject: FW: Authentication Failure Report
+Message-ID: <report-1@outlook.com>
+DKIM-Signature: v=1; a=rsa-sha256; d=outlook.com; s=selector1; h=from:to:subject;
+ bh=fakebh; b=fakeb
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=feedback-report;
+	boundary="mime-boundary-1"
+Content-Transfer-Encoding: 7bit
+
+--mime-boundary-1
+Content-Type: text/plain; charset="us-ascii"
+Content-Disposition: inline
+
+This is an authentication failure report for an email message received from
+IP address 203.0.113.9 on Thu, 10 Oct 2026 12:00:00 +0000.
+For more information about this format please see RFC 5965.
+
+--mime-boundary-1
+Content-Type: message/feedback-report
+
+Feedback-Type: auth-failure
+User-Agent: Microsoft-Outlook-Forensics/1.0
+Version: 1
+Original-Mail-From: <spammer@xcds.net>
+Original-Rcpt-To: <someone@example.com>
+Arrival-Date: Thu, 10 Oct 2026 12:00:00 +0000
+Authentication-Results: mx.example.com; spf=fail smtp.mailfrom=xcds.net;
+	dkim=fail header.d=xcds.net
+DKIM-Domain: xcds.net
+DKIM-Identity: @xcds.net
+DKIM-Selector: mail
+Source-IP: 203.0.113.9
+Reported-Domain: xcds.net
+Identity-Alignment: none
+Original-Envelope-Id: ABC123
+
+--mime-boundary-1
+Content-Type: message/rfc822
+Content-Disposition: attachment
+
+From: "Fake Person" <spammer@xcds.net>
+To: someone@example.com
+Subject: Your invoice is ready
+Date: Thu, 10 Oct 2026 11:59:00 +0000
+Message-ID: <fake-123@xcds.net>
+X-Mailer: EvilMailer 1.0
+Content-Type: text/plain; charset="us-ascii"
+
+Buy stuff at http://evil.example
+--mime-boundary-1--
