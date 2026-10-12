@@ -22,6 +22,8 @@ export interface ProcessingStatusSnapshot {
   lastFailedAt: string | null;
   lastError: string | null;
   consecutiveFailures: number;
+  /** Null until the first cycle has looked; false means nobody has configured a mailbox yet. */
+  mailboxConfigured: boolean | null;
   scheduledIntervalMs: number | null;
   nextScheduledAt: string | null;
 }
@@ -49,6 +51,7 @@ const state = {
   lastFailedAt: null as Date | null,
   lastError: null as string | null,
   consecutiveFailures: 0,
+  mailboxConfigured: null as boolean | null,
   scheduledIntervalMs: null as number | null,
   nextScheduledAt: null as Date | null,
 };
@@ -76,6 +79,14 @@ export function recordScheduledRun(intervalMs: number, nextRunAt: Date): void {
   state.nextScheduledAt = nextRunAt;
 }
 
+/**
+ * Tracks whether a mailbox has been configured at all, so /health can distinguish "nothing to
+ * do yet" from "something is broken" - conflating those is how a dead parser stays green.
+ */
+export function setMailboxConfigured(configured: boolean): void {
+  state.mailboxConfigured = configured;
+}
+
 export function getProcessingStatus(): ProcessingStatusSnapshot {
   return {
     startedAt: state.startedAt.toISOString(),
@@ -84,6 +95,7 @@ export function getProcessingStatus(): ProcessingStatusSnapshot {
     lastFailedAt: state.lastFailedAt ? state.lastFailedAt.toISOString() : null,
     lastError: state.lastError,
     consecutiveFailures: state.consecutiveFailures,
+    mailboxConfigured: state.mailboxConfigured,
     scheduledIntervalMs: state.scheduledIntervalMs,
     nextScheduledAt: state.nextScheduledAt ? state.nextScheduledAt.toISOString() : null,
   };

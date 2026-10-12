@@ -19,9 +19,11 @@ export interface SettingDefinition {
   default: string;
   label: string;
   description: string;
-  category: 'forensics' | 'processing' | 'auth' | 'domains';
+  category: 'forensics' | 'processing' | 'auth' | 'domains' | 'mailbox';
   min?: number;
   max?: number;
+  /** Never returned to a client; the UI shows whether a value is stored instead. */
+  secret?: boolean;
   /** Changing this one is worth a warning in the UI. */
   dangerous?: boolean;
 }
@@ -92,6 +94,53 @@ export const SETTINGS: SettingDefinition[] = [
     label: 'Domain check interval (hours)',
     description: 'How often the background check runs. Records change rarely; daily is plenty.',
     category: 'domains',
+  },
+  {
+    key: 'mailbox.host',
+    type: 'string',
+    default: '',
+    label: 'Mail server hostname',
+    description:
+      'The IMAP server holding the reports, e.g. mail.example.com. Usually the same server that receives mail for rua=/ruf=.',
+    category: 'mailbox',
+  },
+  {
+    key: 'mailbox.port',
+    type: 'number',
+    default: '993',
+    min: 1,
+    max: 65535,
+    label: 'IMAP port',
+    description: '993 is IMAPS (TLS). Plain 143 is not supported - the connection is always encrypted.',
+    category: 'mailbox',
+  },
+  {
+    key: 'mailbox.user',
+    type: 'string',
+    default: '',
+    label: 'Mailbox user',
+    description: 'The account that receives the reports, e.g. dmarc@example.com.',
+    category: 'mailbox',
+  },
+  {
+    key: 'mailbox.password',
+    type: 'string',
+    default: '',
+    label: 'Mailbox password',
+    description:
+      'Stored in the database, so the volume holding it needs the same care as the reports themselves. Leave it empty to keep the current value.',
+    category: 'mailbox',
+    secret: true,
+  },
+  {
+    key: 'mailbox.verifyTls',
+    type: 'boolean',
+    default: 'true',
+    label: 'Verify the mail server certificate',
+    description:
+      'On by default. Turning it off accepts any certificate, which makes an interception or a wrong hostname invisible - only do it for a server with a self-signed certificate.',
+    category: 'mailbox',
+    dangerous: true,
   },
   {
     key: 'auth.registrationOpen',

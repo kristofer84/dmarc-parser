@@ -16,6 +16,7 @@ import type {
   ForensicSummary,
   ForensicFilters,
   AppSetting,
+  MailboxTestResult,
   ManagedUser,
   AvailableDomain,
   DomainSummary,
@@ -269,6 +270,23 @@ class ApiClient {
     return response.data.setting;
   }
 
+  /**
+   * A mailbox that cannot be reached is reported as `ok: false` on a 200, so the body is the
+   * result in both cases - only a broken endpoint or a transport failure rejects.
+   */
+  async testMailbox(payload: {
+    host?: string;
+    port?: number;
+    user?: string;
+    password?: string;
+  }): Promise<MailboxTestResult> {
+    const response = await this.client.post<MailboxTestResult>('/settings/mailbox/test', payload, {
+      // A cold IMAP + TLS handshake routinely outlives the client's 10s default.
+      timeout: 30000,
+    });
+    return response.data;
+  }
+
   async getUsers(): Promise<ManagedUser[]> {
     const response = await this.client.get<{ data: ManagedUser[] }>('/users');
     return response.data.data;
@@ -376,6 +394,7 @@ export const domainsApi = {
 export const settingsApi = {
   list: () => apiClient.getSettings(),
   update: (key: string, value: string) => apiClient.updateSetting(key, value),
+  testMailbox: (payload: Parameters<typeof apiClient.testMailbox>[0]) => apiClient.testMailbox(payload),
 };
 
 export const usersApi = {

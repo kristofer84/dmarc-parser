@@ -3,11 +3,16 @@ import { DmarcParser } from './dmarcParser.js';
 import { RufParser } from './rufParser.js';
 import { prisma } from '../db/prisma.js';
 import { getBooleanSetting } from './settings.js';
+import { resolveMailboxConfig } from './mailboxConfig.js';
 import {
   recordProcessingSuccess,
   recordProcessingFailure,
   recordScheduledRun,
+  setMailboxConfigured,
 } from './processingStatus.js';
+
+/** Logged once per unconfigured spell rather than on every cycle. */
+let warnedAboutMailbox = false;
 
 export interface ProcessingResult {
   processed: number;
@@ -51,6 +56,22 @@ export class EmailProcessor {
 
     try {
       console.log('🚀 Starting email processing service...');
+
+      // Without a mailbox there is nothing to fetch. This is a normal state on a fresh
+      // deployment - the UI is up and an administrator still has to fill the settings in - so
+      // it is reported as "not configured" rather than as a failure.
+      const mailbox = await resolveMailboxConfig();
+      setMailboxConfigured(mailbox.configured);
+
+      if (!mailbox.configured) {
+        if (!warnedAboutMailbox) {
+          console.log(`📭 ${mailbox.summary} - set it under Administration → Settings`);
+          warnedAboutMailbox = true;
+        }
+        recordProcessingSuccess(result);
+        return result;
+      }
+      warnedAboutMailbox = false;
 
       // Check if this is the first run (empty database)
       const reportCount = await prisma.report.count();

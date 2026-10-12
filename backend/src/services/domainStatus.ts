@@ -938,7 +938,9 @@ async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
         return {
           id,
           label,
-          status: 'info',
+          // 2048 is the current recommendation, so a key at that size is simply correct -
+          // reporting it as merely informational made a healthy domain look untouched.
+          status: 'ok',
           summary: `selector "${selector}" holds a valid 2048-bit RSA key`,
           details,
         };

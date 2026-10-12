@@ -217,8 +217,18 @@ export interface AppSetting {
   min?: number;
   max?: number;
   dangerous?: boolean;
+  /** A credential: the API never returns its value, only whether one is stored. */
+  secret?: boolean;
+  isSet?: boolean;
   updatedAt: string | null;
   updatedBy: string | null;
+}
+
+/** A failed connection comes back as `ok: false` on a 200, so it is a result, not an error. */
+export interface MailboxTestResult {
+  ok: boolean;
+  message: string;
+  greeting?: string;
 }
 
 export interface ManagedUser {

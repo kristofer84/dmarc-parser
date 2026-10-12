@@ -131,6 +131,9 @@ export function createApp(): express.Application {
         processing: {
           lastCompletedAt: snapshot.lastCompletedAt,
           consecutiveFailures: snapshot.consecutiveFailures,
+          // Configuration state, not a secret: a monitor wants to tell "not set up yet"
+          // apart from "broken".
+          mailboxConfigured: snapshot.mailboxConfigured,
         },
         ...(health.reason ? { reason: health.reason.split('(')[0].trim() } : {}),
       });

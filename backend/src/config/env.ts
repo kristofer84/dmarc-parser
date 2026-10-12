@@ -4,10 +4,11 @@ dotenv.config();
 
 interface Config {
   imap: {
-    host: string;
+    /** Null when the mailbox has not been given in the environment - it can then be set in the UI. */
+    host: string | null;
     port: number;
-    user: string;
-    password: string;
+    user: string | null;
+    password: string | null;
   };
   database: {
     url: string;
@@ -21,13 +22,10 @@ interface Config {
 }
 
 function validateEnv(): Config {
-  const requiredVars = [
-    'IMAP_HOST',
-    'IMAP_PORT', 
-    'IMAP_USER',
-    'IMAP_PASSWORD',
-    'DATABASE_URL'
-  ];
+  // Everything except the database URL is optional: a fresh deployment should start, serve the
+  // UI and let an administrator fill in the mailbox there instead of crash-looping on a
+  // missing variable.
+  const requiredVars = ['DATABASE_URL'];
 
   const missing = requiredVars.filter(varName => !process.env[varName]);
   
@@ -35,8 +33,9 @@ function validateEnv(): Config {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 
-  const imapPort = parseInt(process.env.IMAP_PORT!, 10);
-  if (isNaN(imapPort) || imapPort <= 0 || imapPort > 65535) {
+  const imapPortRaw = process.env.IMAP_PORT?.trim();
+  const imapPort = imapPortRaw ? parseInt(imapPortRaw, 10) : 993;
+  if (imapPortRaw && (isNaN(imapPort) || imapPort <= 0 || imapPort > 65535)) {
     throw new Error('IMAP_PORT must be a valid port number between 1 and 65535');
   }
 
@@ -65,10 +64,10 @@ function validateEnv(): Config {
 
   return {
     imap: {
-      host: process.env.IMAP_HOST!,
+      host: process.env.IMAP_HOST?.trim() || null,
       port: imapPort,
-      user: process.env.IMAP_USER!,
-      password: process.env.IMAP_PASSWORD!,
+      user: process.env.IMAP_USER?.trim() || null,
+      password: process.env.IMAP_PASSWORD || null,
     },
     database: {
       url: process.env.DATABASE_URL!,

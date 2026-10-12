@@ -6,6 +6,7 @@ import { EmailProcessor } from './services/emailProcessor.js';
 import { ensureSettingsSeeded, getBooleanSetting, getNumberSetting } from './services/settings.js';
 import { ensureAdminUser } from './services/auth.js';
 import { runAllChecks, discoverDomains } from './services/domainMonitor.js';
+import { resolveMailboxConfig } from './services/mailboxConfig.js';
 
 setupLogging();
 
@@ -15,7 +16,10 @@ async function startServer() {
     
     // Validate environment configuration
     console.log('✅ Environment configuration loaded');
-    console.log(`📧 IMAP: ${config.imap.user}@${config.imap.host}:${config.imap.port}`);
+    // Environment values win where they are set; anything missing can be filled in from the
+    // UI, so a deployment that never sets IMAP_* still becomes functional.
+    const mailbox = await resolveMailboxConfig();
+    console.log(`📧 Mailbox: ${mailbox.summary}`);
     console.log(`🗄️ Database: ${config.database.url}`);
     console.log(`🌐 Server: Port ${config.server.port} (${config.server.nodeEnv})`);
 

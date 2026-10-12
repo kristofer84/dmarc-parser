@@ -31,7 +31,7 @@ gh attestation verify oci://ghcr.io/kristofer84/dmarc-parser:latest --repo krist
 | Variable | What it is |
 |---|---|
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | The first administrator, created only when the users table is empty. Without a password one is generated and printed to the log once. |
-| `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD` | The mailbox that receives `rua`/`ruf` reports. |
+| `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD` | The mailbox that receives `rua`/`ruf` reports. Entirely optional: anything left out can be set in the UI under *Administration → Settings*, per field, where the environment keeps precedence. **Test connection** there reports the real server's answer before you save. |
 | `COOKIE_SECURE` | `true` once TLS is in front of it, otherwise the session cookie is dropped over http. |
 | `PUBLIC_ORIGIN` | Only needed when a browser calls the API from a different origin than the UI. |
 | `DATABASE_URL` | Defaults to `file:/app/data/data.db`, inside the mounted volume. |

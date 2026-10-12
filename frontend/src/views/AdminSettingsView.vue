@@ -33,6 +33,11 @@
           <div class="card-header">
             <h2 class="text-lg leading-6 font-medium text-gray-900 capitalize">{{ category }}</h2>
           </div>
+          <p v-if="category === 'mailbox'" class="px-4 py-5 sm:px-6 text-sm text-gray-600 border-b border-gray-200">
+            If the mailbox was configured through the container's environment, those values seeded
+            it on first start. A value saved below takes over for the mailbox specifically; the
+            environment values are still used for everything else.
+          </p>
           <div class="divide-y divide-gray-100">
             <div v-for="setting in settingsByCategory(category)" :key="setting.key" class="p-4 sm:p-6">
               <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -40,6 +45,7 @@
                   <div class="flex items-center space-x-2">
                     <h3 class="text-sm font-medium text-gray-900">{{ setting.label }}</h3>
                     <span v-if="setting.dangerous" class="badge badge-warning">careful</span>
+                    <span v-if="setting.secret && setting.isSet" class="badge badge-success">stored</span>
                   </div>
                   <p class="mt-1 text-sm text-gray-600">{{ setting.description }}</p>
                   <p class="mt-2 text-xs text-gray-400 font-mono">{{ setting.key }}</p>
@@ -75,6 +81,17 @@
                     class="w-28 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                   />
 
+                  <!-- secret: the API returns no value, so the box is always blank and typing replaces -->
+                  <input
+                    v-else-if="setting.secret"
+                    v-model="draft[setting.key]"
+                    type="password"
+                    autocomplete="new-password"
+                    :disabled="!isAdmin"
+                    :placeholder="setting.isSet ? '•••• stored — type to replace' : 'Not set'"
+                    class="w-56 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                  />
+
                   <!-- string -->
                   <input
                     v-else
@@ -100,6 +117,31 @@
               </p>
             </div>
           </div>
+
+          <div v-if="category === 'mailbox'" class="px-4 py-5 sm:px-6 bg-gray-50 border-t border-gray-200">
+            <div class="flex flex-wrap items-center gap-3">
+              <button class="btn btn-secondary text-sm" :disabled="testing" @click="runMailboxTest">
+                <span
+                  v-if="testing"
+                  class="inline-block h-3 w-3 mr-2 rounded-full border-2 border-gray-400 border-t-transparent animate-spin"
+                ></span>
+                {{ testing ? 'Testing…' : 'Test connection' }}
+              </button>
+              <span class="text-xs text-gray-500">
+                Uses the values above, including unsaved edits; a blank box falls back to the stored value.
+              </span>
+            </div>
+
+            <div v-if="testResult" class="mt-3">
+              <p
+                class="rounded-md px-3 py-2 text-sm"
+                :class="testResult.ok ? 'bg-success-50 text-success-800' : 'bg-danger-50 text-danger-800'"
+              >
+                {{ testResult.message }}
+              </p>
+              <p v-if="testResult.greeting" class="mt-1 text-xs font-mono text-gray-500">{{ testResult.greeting }}</p>
+            </div>
+          </div>
         </div>
       </template>
     </div>
@@ -110,7 +152,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { settingsApi } from '@/api/client';
 import { useAuth } from '@/composables/useAuth';
-import type { AppSetting } from '@/types/api';
+import type { AppSetting, MailboxTestResult } from '@/types/api';
 
 const { isAdmin } = useAuth();
 
@@ -121,6 +163,8 @@ const error = ref<string | null>(null);
 const savingKey = ref<string | null>(null);
 const draft = reactive<Record<string, string>>({});
 const messages = reactive<Record<string, { text: string; error: boolean }>>({});
+const testing = ref(false);
+const testResult = ref<MailboxTestResult | null>(null);
 
 const settingsByCategory = (category: string) =>
   settings.value.filter((setting) => setting.category === category);
@@ -147,6 +191,9 @@ const load = async () => {
 };
 
 const save = async (setting: AppSetting) => {
+  // A blank secret box means "keep the stored credential", never "clear it".
+  if (setting.secret && !draft[setting.key]) return;
+
   savingKey.value = setting.key;
   delete messages[setting.key];
 
@@ -154,7 +201,9 @@ const save = async (setting: AppSetting) => {
     const updated = await settingsApi.update(setting.key, draft[setting.key] ?? '');
     const index = settings.value.findIndex((s) => s.key === updated.key);
     if (index !== -1) {
-      settings.value[index] = updated;
+      const merged = { ...settings.value[index], ...updated };
+      // Sending a value for a secret always leaves one stored, even if the response omits isSet.
+      settings.value[index] = merged.secret ? { ...merged, isSet: true } : merged;
     }
     draft[setting.key] = updated.value;
     messages[setting.key] = { text: 'Saved', error: false };
@@ -169,6 +218,35 @@ const save = async (setting: AppSetting) => {
 };
 
 const formatDateTime = (value: string): string => new Date(value).toLocaleString();
+
+/**
+ * Tests the mailbox with the current drafts. Fields left blank are sent as absent so the server
+ * falls back to the stored or environment value - that is what makes an untyped password test
+ * the saved credential rather than replace it.
+ */
+const runMailboxTest = async () => {
+  testing.value = true;
+  testResult.value = null;
+
+  const port = draft['mailbox.port'];
+
+  try {
+    testResult.value = await settingsApi.testMailbox({
+      host: draft['mailbox.host'] || undefined,
+      port: port ? Number(port) : undefined,
+      user: draft['mailbox.user'] || undefined,
+      password: draft['mailbox.password'] || undefined,
+    });
+  } catch (err) {
+    // Reaching here means the endpoint or the network broke, not that the mailbox refused us.
+    testResult.value = {
+      ok: false,
+      message: err instanceof Error ? err.message : 'Could not run the mailbox test',
+    };
+  } finally {
+    testing.value = false;
+  }
+};
 
 onMounted(load);
 </script>

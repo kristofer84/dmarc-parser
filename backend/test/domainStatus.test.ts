@@ -361,7 +361,7 @@ await test('DKIM: a genuine 2048-bit key is reported with its size, a 1024-bit o
     { dkimSelectors: ['mailjet'] },
   );
   const dkim = byId(report.results, 'dkim:mailjet');
-  assert.equal(dkim.status, 'info');
+  assert.equal(dkim.status, 'ok');
   assert.match(dkim.summary, /2048-bit RSA key/);
   assert.match(dkim.details?.join('\n') ?? '', /rsa key, 2048 bits/);
 
@@ -563,8 +563,13 @@ await test('the report status is the worst result, and info/skipped never drag i
   });
   assert.equal(healthy.status, 'ok');
   assert.ok(
-    healthy.results.some((result) => result.status === 'info'),
-    'the 2048-bit key should report info',
+    healthy.results.every((result) => result.status !== 'error' && result.status !== 'warn'),
+    'nothing in a healthy zone may be a warn or an error',
+  );
+  assert.equal(
+    byId(healthy.results, 'dkim:mailjet').status,
+    'ok',
+    'a 2048-bit key is the recommendation, so it is a pass rather than a note',
   );
   assert.ok(healthy.results.every((result) => result.status === 'ok' || result.status === 'info'));
   assert.deepEqual(healthy.dkimSelectors, ['mailjet']);

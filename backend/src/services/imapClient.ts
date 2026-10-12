@@ -1,7 +1,7 @@
 import Imap from 'node-imap';
 import { simpleParser, ParsedMail, Attachment } from 'mailparser';
-import { config } from '../config/env.js';
 import { RufParser } from './rufParser.js';
+import { resolveMailboxConfig, type MailboxConfig } from './mailboxConfig.js';
 
 export interface EmailMessage {
   uid: number;
@@ -26,7 +26,9 @@ export interface EmailAttachment {
 }
 
 export class ImapClient {
-  private imap: Imap;
+  /** Created on connect rather than in the constructor: the credentials may come from the
+   * settings table, which can only be read asynchronously, and can change between cycles. */
+  private imap!: Imap;
   private connected = false;
   private retryCount = 0;
   private maxRetries = 3;
@@ -34,17 +36,17 @@ export class ImapClient {
   private readonly archiveMailbox = 'dmarc-archive';
   private archiveMailboxVerified = false;
 
-  constructor() {
+  private createConnection(mailbox: MailboxConfig): void {
     this.imap = new Imap({
-      user: config.imap.user,
-      password: config.imap.password,
-      host: config.imap.host,
-      port: config.imap.port,
+      user: mailbox.user,
+      password: mailbox.password,
+      host: mailbox.host,
+      port: mailbox.port,
       tls: true,
       tlsOptions: {
-        rejectUnauthorized: false,
-        servername: config.imap.host, // Explicitly set server name for SNI
-        secureProtocol: 'TLSv1_2_method', // Force TLS 1.2
+        // Verifying is the default; only a self-signed server should turn it off.
+        rejectUnauthorized: mailbox.verifyTls,
+        servername: mailbox.host, // SNI, and the name the certificate is checked against
       },
       connTimeout: 60000, // 60 second connection timeout
       authTimeout: 30000, // 30 second auth timeout
@@ -83,6 +85,18 @@ export class ImapClient {
   }
 
   async connect(): Promise<void> {
+    if (!this.imap) {
+      const mailbox = await resolveMailboxConfig();
+
+      if (!mailbox.configured || !mailbox.config) {
+        throw new Error(
+          `Mailbox is not configured yet (${mailbox.summary}) - set it under Administration → Settings`,
+        );
+      }
+
+      this.createConnection(mailbox.config);
+    }
+
     return new Promise((resolve, reject) => {
       if (this.connected) {
         resolve();
