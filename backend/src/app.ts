@@ -40,6 +40,27 @@ export function createApp(): express.Application {
     .filter((origin) => origin.length > 0);
   const localFrontendPattern = /:8097$|:4173$/;
 
+  /**
+   * The Vite dev-server ports matter only on the machine running the dev server. In
+   * production the SPA is served from the same origin as the API, so nothing needs them -
+   * and allowing "any host on port 8097" would let someone else's page make browser
+   * requests with the session cookie (SameSite=Lax is the only thing stopping it today).
+   */
+  const isDevOrigin = (origin: string): boolean => {
+    if (!localFrontendPattern.test(origin)) {
+      return false;
+    }
+    if (process.env.NODE_ENV !== 'production') {
+      return true;
+    }
+    try {
+      const { hostname } = new URL(origin);
+      return ['localhost', '127.0.0.1', '::1'].includes(hostname);
+    } catch {
+      return false;
+    }
+  };
+
   // Middleware
   app.use(cors({
     origin: (origin, callback) => {
@@ -47,7 +68,7 @@ export function createApp(): express.Application {
         callback(null, true);
         return;
       }
-      if (configuredOrigins.includes(origin) || localFrontendPattern.test(origin)) {
+      if (configuredOrigins.includes(origin) || isDevOrigin(origin)) {
         callback(null, true);
         return;
       }

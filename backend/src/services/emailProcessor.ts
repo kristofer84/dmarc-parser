@@ -127,6 +127,61 @@ export class EmailProcessor {
     }
   }
 
+  /**
+   * Reprocesses mail that was already ingested, straight out of the archive.
+   *
+   * The mailbox is only read: no flags are set, nothing is moved, so an interrupted reparse
+   * is harmless and can simply be run again. The database writes go through the same dedup
+   * keys as normal ingestion, so a report that is already stored is skipped rather than
+   * duplicated; the useful case is backfilling fields that were switched on after the first
+   * pass (full headers, the reported body, the raw feedback block) or re-running a parser
+   * fix over old reports.
+   */
+  async reparseArchivedMessages(mailbox: string = 'dmarc-archive'): Promise<ProcessingResult> {
+    const result: ProcessingResult = {
+      processed: 0,
+      forensic: 0,
+      errors: 0,
+      skipped: 0,
+      details: [],
+    };
+
+    console.log(`🔄 Reparsing the ${mailbox} mailbox (read-only: no flags changed, nothing moved)`);
+
+    try {
+      await this.imapClient.connectWithRetry();
+      const messages = await this.imapClient.fetchAllFromMailbox(mailbox);
+      console.log(`📬 Reparsing ${messages.length} archived message(s)...`);
+
+      for (const message of messages) {
+        try {
+          await this.processMessage(message, result);
+        } catch (error) {
+          console.error(`❌ Failed to reparse message ${message.uid}:`, error);
+          result.errors++;
+        }
+      }
+    } catch (error) {
+      console.error('❌ Reparse failed:', error);
+      // Deliberately not recorded as a processing run: a manual reparse must not make a
+      // stalled scheduler look healthy on /health.
+      recordProcessingFailure(error);
+      throw error;
+    } finally {
+      try {
+        await this.imapClient.disconnect();
+      } catch (error) {
+        console.warn('⚠️ Failed to disconnect IMAP client:', error);
+      }
+    }
+
+    console.log(
+      `📊 Reparse finished: ${result.processed} new aggregate, ${result.forensic} new forensic, ${result.skipped} already stored, ${result.errors} errors`,
+    );
+
+    return result;
+  }
+
   private async processMessage(message: EmailMessage, result: ProcessingResult): Promise<boolean> {
     console.log(`🔄 Processing message from ${message.from} - ${message.subject}`);
 

@@ -13,7 +13,9 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx src/db/seed.ts",
-    "process-emails": "tsx src/cli/processEmails.ts"
+    "process-emails": "tsx src/cli/processEmails.ts",
+    "reparse": "node dist/cli/reparseArchive.js",
+    "reparse:dev": "tsx src/cli/reparseArchive.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.7.1",

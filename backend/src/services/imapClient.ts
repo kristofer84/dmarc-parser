@@ -198,8 +198,16 @@ export class ImapClient {
   }
 
   async openInbox(): Promise<void> {
+    return this.openMailbox('INBOX');
+  }
+
+  /**
+   * Opens any mailbox. It is opened read-write so the caller can mark or move messages,
+   * but nothing here changes flags on its own.
+   */
+  async openMailbox(mailbox: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.imap.openBox('INBOX', false, (err, box) => {
+      this.imap.openBox(mailbox, false, (err, box) => {
         if (err) {
           reject(new Error(`Failed to open inbox: ${err.message}`));
           return;
@@ -214,12 +222,12 @@ export class ImapClient {
     return this.connected;
   }
 
-  async fetchMessages(includeRead: boolean = false, limit?: number): Promise<EmailMessage[]> {
+  async fetchMessages(includeRead: boolean = false, limit?: number, mailbox: string = 'INBOX'): Promise<EmailMessage[]> {
     if (!this.connected) {
       throw new Error('IMAP client not connected');
     }
 
-    await this.openInbox();
+    await this.openMailbox(mailbox);
 
     return new Promise((resolve, reject) => {
       // Search criteria: unread messages or all messages
@@ -329,6 +337,14 @@ export class ImapClient {
 
   async fetchUnreadMessages(): Promise<EmailMessage[]> {
     return this.fetchMessages(false, 50);
+  }
+
+  /**
+   * Every message in a mailbox, read-only with respect to the mailbox: no flags are set and
+   * nothing is moved. Used to reprocess mail that was already ingested.
+   */
+  async fetchAllFromMailbox(mailbox: string): Promise<EmailMessage[]> {
+    return this.fetchMessages(true, undefined, mailbox);
   }
 
   private async parseEmailMessage(parsed: ParsedMail, uid: number): Promise<EmailMessage> {
