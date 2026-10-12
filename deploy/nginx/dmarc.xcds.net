@@ -1,0 +1,71 @@
+# dmarc.xcds.net — reverse proxy to the dockerised DMARC console.
+#
+# The frontend container serves the SPA and proxies /api to the backend container,
+# so the host nginx only has to forward "/" to 127.0.0.1:8097. That keeps the SPA and
+# the API on one origin, which is why the session cookie (SameSite=Lax) works without
+# any cross-site fiddling.
+#
+# No basic auth here, unlike borbot.xcds.net: the app has its own login, roles and
+# per-domain scoping now, and a second password prompt in front of a real login page
+# only teaches people to paste credentials into the wrong box.
+#
+# Canonical copy lives in the dmarc-parser repo (deploy/nginx/); deployed to
+#   /etc/nginx/sites-available/dmarc.xcds.net
+# and symlinked into sites-enabled/.
+#
+# TLS: this file starts on a self-signed cert at /etc/ssl/dmarc/* so nginx loads before
+# DNS exists. Once dmarc.xcds.net resolves to this host, run
+#   sudo certbot --nginx -d dmarc.xcds.net
+# and certbot rewrites the ssl_certificate lines below to the Let's Encrypt paths.
+
+# HTTP -> HTTPS redirect (and ACME http-01 challenge webroot).
+server {
+    listen 80;
+    listen [::]:80;
+    server_name dmarc.xcds.net;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html/root;
+    }
+
+    location / {
+        return 301 https://dmarc.xcds.net$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name dmarc.xcds.net;
+
+    ssl_certificate     /etc/ssl/dmarc/fullchain.pem;
+    ssl_certificate_key /etc/ssl/dmarc/privkey.pem;
+
+    # Security headers. The SPA needs no inline script, but Vue's dev-time runtime and
+    # Chart.js keep 'unsafe-inline' for styles only.
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+
+    # Reports can carry large bodies; keep the limit modest since this is a small app.
+    client_max_body_size 2m;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html/root;
+    }
+
+    location / {
+        proxy_pass         http://127.0.0.1:8097;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        # The backend decides the Secure cookie flag from this header.
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        'upgrade';
+        proxy_cache_bypass $http_upgrade;
+    }
+}

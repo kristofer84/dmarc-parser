@@ -4,7 +4,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8096:8096"
+      # Loopback only: host nginx (dmarc.xcds.net) is the single public entry point.
+      - "127.0.0.1:8096:8096"
     environment:
       - NODE_ENV=production
       - PORT=8096
@@ -13,6 +14,15 @@ services:
       - IMAP_PORT=${IMAP_PORT}
       - IMAP_USER=${IMAP_USER}
       - IMAP_PASSWORD=${IMAP_PASSWORD}
+      # First administrator, seeded once when the users table is empty.
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      # TLS terminates at host nginx, so the session cookie must be marked Secure there.
+      - COOKIE_SECURE=${COOKIE_SECURE}
+      - PUBLIC_ORIGIN=${PUBLIC_ORIGIN}
+      # Optional scheduler overrides.
+      - ENABLE_SCHEDULED_EMAIL_PROCESSING=${ENABLE_SCHEDULED_EMAIL_PROCESSING}
+      - EMAIL_PROCESSING_INTERVAL_MS=${EMAIL_PROCESSING_INTERVAL_MS}
     volumes:
       - ./data:/app/data
     restart: unless-stopped
@@ -33,7 +43,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "8097:80"
+      # Loopback only - the frontend proxies /api to the backend over the compose network.
+      - "127.0.0.1:8097:80"
     depends_on:
       - backend
     restart: unless-stopped
