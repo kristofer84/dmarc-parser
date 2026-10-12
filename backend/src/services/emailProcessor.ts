@@ -1,6 +1,11 @@
 import { ImapClient, EmailMessage, EmailAttachment } from './imapClient.js';
 import { DmarcParser } from './dmarcParser.js';
 import { prisma } from '../db/prisma.js';
+import {
+  recordProcessingSuccess,
+  recordProcessingFailure,
+  recordScheduledRun,
+} from './processingStatus.js';
 
 export interface ProcessingResult {
   processed: number;
@@ -49,6 +54,7 @@ export class EmailProcessor {
       
       if (messages.length === 0) {
         console.log('📭 No DMARC reports to process');
+        recordProcessingSuccess(result);
         return result;
       }
 
@@ -87,10 +93,13 @@ export class EmailProcessor {
       console.log('✅ Email processing completed');
       console.log(`📊 Results: ${result.processed} processed, ${result.errors} errors, ${result.skipped} skipped`);
 
+      recordProcessingSuccess(result);
+
       return result;
 
     } catch (error) {
       console.error('❌ Email processing service failed:', error);
+      recordProcessingFailure(error);
       throw error;
     } finally {
       // Always disconnect
@@ -278,6 +287,7 @@ export class EmailProcessor {
 
     console.log(`⏰ Scheduling email processing every ${intervalSeconds} seconds`);
     console.log(`🗓️ Next scheduled check at ${nextRun.toISOString()}`);
+    recordScheduledRun(intervalMs, nextRun);
 
     const processInterval = setInterval(async () => {
       try {
@@ -292,6 +302,8 @@ export class EmailProcessor {
         console.log(`🗓️ Next scheduled check at ${upcomingRun.toISOString()}`);
       } catch (error) {
         console.error('❌ Scheduled processing failed:', error);
+      } finally {
+        recordScheduledRun(intervalMs, new Date(Date.now() + intervalMs));
       }
     }, intervalMs);
 

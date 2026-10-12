@@ -4,6 +4,7 @@ import { config } from './config/env.js';
 import reportsRouter from './routes/reports.js';
 import summaryRouter from './routes/summary.js';
 import processingLogsRouter from './routes/processingLogs.js';
+import { evaluateProcessingHealth, getProcessingStatus } from './services/processingStatus.js';
 
 export interface ErrorResponse {
   error: {
@@ -48,13 +49,29 @@ export function createApp(): express.Application {
     next();
   });
 
-  // Health check endpoint
-  app.get('/health', (req, res) => {
+  // Liveness check: the HTTP process is answering.
+  app.get('/health/live', (req, res) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
+    });
+  });
+
+  // Readiness check: a 200 here means DMARC reports are actually being ingested. A stuck
+  // IMAP client or a scheduler that stopped completing cycles returns 503, so the
+  // container healthcheck and monitoring no longer report 'healthy' for a parser that
+  // has ingested nothing for days.
+  app.get('/health', (req, res) => {
+    const health = evaluateProcessingHealth();
+
+    res.status(health.healthy ? 200 : 503).json({
+      status: health.healthy ? 'ok' : 'unhealthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
       environment: config.server.nodeEnv,
+      processing: getProcessingStatus(),
+      ...(health.reason ? { reason: health.reason } : {}),
     });
   });
 

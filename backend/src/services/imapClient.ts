@@ -104,6 +104,13 @@ export class ImapClient {
   }
 
   async connectWithRetry(): Promise<void> {
+    // Start every cycle with a fresh retry budget. Without this reset a cycle that
+    // exhausted its retries leaves retryCount at maxRetries, so the loop below never
+    // runs again: the method resolves without connecting and every later cycle dies in
+    // fetchMessages() with 'IMAP client not connected' until the container is restarted
+    // (this is what happened after a transient EAI_AGAIN on 2026-10-07).
+    this.retryCount = 0;
+
     while (this.retryCount < this.maxRetries) {
       try {
         await this.connect();
@@ -121,6 +128,10 @@ export class ImapClient {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
+
+    // Unreachable while maxRetries >= 1, but never fall through silently: a caller that
+    // gets no error must be able to assume a connection exists.
+    throw new Error(`IMAP connection failed after ${this.maxRetries} attempts`);
   }
 
   async disconnect(): Promise<void> {
