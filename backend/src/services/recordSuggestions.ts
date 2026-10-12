@@ -476,11 +476,33 @@ async function generateSpf(ctx: GenerationContext): Promise<GeneratedRecord> {
   };
 }
 
+const POLICY_STRENGTH: Record<DmarcPolicy, number> = { none: 0, quarantine: 1, reject: 2 };
+
+/** The p= value the check captured from live DNS, if the domain publishes DMARC at all. */
+function readPublishedPolicy(current: DomainCheckResult[]): DmarcPolicy | null {
+  const dmarc = current.find((result) => result.id === 'dmarc');
+  // The first detail line of a check is the record exactly as published.
+  const match = (dmarc?.details?.[0] ?? '').match(/(?:^|;)\s*p\s*=\s*(none|quarantine|reject)\b/i);
+  return match ? (match[1].toLowerCase() as DmarcPolicy) : null;
+}
+
 async function generateDmarc(ctx: GenerationContext): Promise<GeneratedRecord> {
-  const policy = ctx.input.dmarcPolicy ?? 'none';
+  // Default to the policy already published rather than to p=none. The checks run against live
+  // DNS, so suggesting something weaker than the domain already has would be a downgrade
+  // presented as "nothing to do" - and pasting it would genuinely loosen the domain.
+  const publishedPolicy = readPublishedPolicy(ctx.input.current);
+  const policy = ctx.input.dmarcPolicy ?? publishedPolicy ?? 'none';
+  const weakened = Boolean(publishedPolicy && POLICY_STRENGTH[policy] < POLICY_STRENGTH[publishedPolicy]);
+
   const rua = (ctx.input.rua ?? ctx.mailboxAddress ?? '').trim();
   const ruf = (ctx.input.ruf ?? ctx.mailboxAddress ?? '').trim();
   const notes: string[] = [];
+
+  if (weakened) {
+    notes.push(
+      `This is weaker than the p=${publishedPolicy} already published: adopting it would loosen the domain.`,
+    );
+  }
 
   if (!rua && !ruf) {
     notes.push(
@@ -787,8 +809,11 @@ function fallbackRecord(id: GeneratedRecordId, label: string, error: unknown): G
 
 /**
  * Builds every record for one domain. Providers whose include hosts are unknown are dropped
- * rather than guessed, and the returned `providers` are the catalog entries actually used,
- * so a UI can link to the right documentation alongside the values.
+ * rather than guessed.
+ *
+ * `providers` is always the **whole catalog**, not the selection: a UI needs every entry to
+ * render the picker, and echoing back only what was requested left the builder unable to offer
+ * anything it had not already been given - on a first visit, nothing at all.
  */
 export async function generateRecords(
   input: SuggestionInput,
@@ -826,5 +851,5 @@ export async function generateRecords(
     }
   }
 
-  return { records, providers: selected };
+  return { records, providers: SPF_PROVIDERS };
 }

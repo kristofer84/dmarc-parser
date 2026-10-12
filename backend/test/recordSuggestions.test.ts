@@ -434,7 +434,7 @@ await test('every generated record carries a purpose, a status and notes', async
   }
 });
 
-await test('the selected providers are echoed back, unknown ones are dropped', async () => {
+await test('the whole provider catalog is returned, unknown ids are dropped', async () => {
   const result = await generateRecords({
     domain: DOMAIN,
     current: [],
@@ -442,8 +442,57 @@ await test('the selected providers are echoed back, unknown ones are dropped', a
     providers: ['mailjet', 'nope'],
     resolver: fakeResolver({}),
   });
-  assert.deepEqual(result.providers.map((provider) => provider.id), ['mailjet']);
+
+  // The picker is built from this list, so it must be the catalog and not an echo of the
+  // request - otherwise the UI can only ever offer what it was already given.
+  assert.ok(result.providers.length >= 2, 'the catalog is returned in full');
+  assert.ok(
+    result.providers.some((provider) => provider.id === 'google'),
+    'a provider that was not requested is still offered',
+  );
+
+  // An unknown id is still dropped from the selection that builds the record.
+  const spf = record(result.records, 'spf').value;
+  assert.match(spf, /include:spf\.mailjet\.com/);
+  assert.doesNotMatch(spf, /nope/);
   assert.match(record(result.records, 'spf').notes.join(' '), /Unknown provider id "nope"/);
+});
+
+await test('dmarc never defaults to a policy weaker than the one published', async () => {
+  // The checks read live DNS, so a stray p=none suggestion would be a downgrade offered as
+  // "nothing to do" - and pasting it would loosen the domain.
+  const published: DomainCheckResult[] = [
+    {
+      id: 'dmarc',
+      label: 'DMARC record',
+      status: 'ok',
+      summary: 'DMARC is published with p=reject',
+      purpose: 'Tells receivers what to do with mail that fails authentication.',
+      details: ['v=DMARC1; p=reject; rua=mailto:dmarc@example.com'],
+    },
+  ];
+
+  const derived = await generateRecords({
+    domain: DOMAIN,
+    current: published,
+    mxHosts: [],
+    resolver: fakeResolver({}),
+  });
+  assert.match(record(derived.records, 'dmarc').value, /p=reject/);
+
+  // An explicit downgrade is allowed but must be called out.
+  const downgraded = await generateRecords({
+    domain: DOMAIN,
+    current: published,
+    mxHosts: [],
+    dmarcPolicy: 'none',
+    resolver: fakeResolver({}),
+  });
+  assert.match(record(downgraded.records, 'dmarc').value, /p=none/);
+  assert.match(
+    record(downgraded.records, 'dmarc').notes.join(' '),
+    /weaker than the p=reject already published/,
+  );
 });
 
 await test('a resolver that throws every query still yields records instead of rejecting', async () => {
