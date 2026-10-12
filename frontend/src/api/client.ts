@@ -26,6 +26,8 @@ import type {
   DomainHealthSummary,
   DomainCreateInput,
   DomainUpdateInput,
+  RecordSuggestions,
+  RecordSuggestionOptions,
 } from '@/types/api';
 
 class ApiClient {
@@ -260,6 +262,18 @@ class ApiClient {
     await this.client.delete(`/domains/${id}`);
   }
 
+  /**
+   * Read-only advice: the endpoint never writes DNS. An omitted option makes the server fall
+   * back to the configuration it would use on its own, which is what the builder shows first.
+   */
+  async suggestDomainRecords(
+    id: string,
+    options: RecordSuggestionOptions = {}
+  ): Promise<RecordSuggestions> {
+    const response = await this.client.post<RecordSuggestions>(`/domains/${id}/records`, options);
+    return response.data;
+  }
+
   // ------------------------------------------------------------------ administration
   async getSettings(): Promise<{ data: AppSetting[]; categories: string[] }> {
     const response = await this.client.get<{ data: AppSetting[]; categories: string[] }>('/settings');
@@ -397,6 +411,8 @@ export const domainsApi = {
   create: (payload: DomainCreateInput) => apiClient.createDomain(payload),
   update: (id: string, payload: DomainUpdateInput) => apiClient.updateDomain(id, payload),
   remove: (id: string) => apiClient.deleteDomain(id),
+  suggestRecords: (id: string, options?: RecordSuggestionOptions) =>
+    apiClient.suggestDomainRecords(id, options),
 };
 
 export const settingsApi = {

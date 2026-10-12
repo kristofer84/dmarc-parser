@@ -30,6 +30,8 @@ export interface DomainCheckResult {
   label: string;
   status: CheckStatus;
   summary: string;
+  /** What this record does and why anyone should care, in one or two plain sentences. */
+  purpose: string;
   details?: string[];
   fix?: string;
 }
@@ -563,7 +565,12 @@ type CheckRunner = (ctx: CheckContext) => Promise<CheckOutcome>;
 // ---------------------------------------------------------------------------
 
 async function checkMx(ctx: CheckContext): Promise<DomainCheckResult[]> {
-  const base = { id: 'mx', label: 'MX records' };
+  const base = {
+    id: 'mx',
+    label: 'MX records',
+    purpose:
+      'MX records name the servers that accept mail for the domain. Without them, mail addressed to the domain has nowhere to go and bounces - sending still works, receiving does not.',
+  };
   let records: MxRecord[];
   try {
     records = await ctx.lookupMx(ctx.domain);
@@ -654,7 +661,12 @@ async function checkMx(ctx: CheckContext): Promise<DomainCheckResult[]> {
 }
 
 async function checkSpf(ctx: CheckContext): Promise<DomainCheckResult[]> {
-  const base = { id: 'spf', label: 'SPF record' };
+  const base = {
+    id: 'spf',
+    label: 'SPF record',
+    purpose:
+      'SPF lists the hosts that are allowed to send mail for the domain, so a receiver can reject a message that forges the domain. Without it, anyone can send as the domain and the receiver has no way to tell.',
+  };
   let records: string[];
   try {
     records = (await ctx.lookupTxt(ctx.domain)).filter((record) => SPF_VERSION.test(record.trim()));
@@ -703,7 +715,7 @@ async function checkSpf(ctx: CheckContext): Promise<DomainCheckResult[]> {
   const details = [
     record,
     `terms: ${parsed.mechanisms.length}`,
-    `DNS lookups used: ${budget.lookups} of ${SPF_LOOKUP_LIMIT}`,
+    `SPF DNS lookups: ${budget.lookups} of the ${SPF_LOOKUP_LIMIT} a receiver may use`,
   ];
 
   let status: CheckStatus;
@@ -744,7 +756,12 @@ async function checkSpf(ctx: CheckContext): Promise<DomainCheckResult[]> {
 }
 
 async function checkDmarc(ctx: CheckContext): Promise<DomainCheckResult[]> {
-  const base = { id: 'dmarc', label: 'DMARC record' };
+  const base = {
+    id: 'dmarc',
+    label: 'DMARC record',
+    purpose:
+      'DMARC tells receivers what to do when a message fails SPF or DKIM, and where to send reports about it. Without it, a spoofed message that fails authentication is still delivered.',
+  };
   const name = `_dmarc.${ctx.domain}`;
   let records: string[];
   try {
@@ -840,6 +857,10 @@ async function checkDmarc(ctx: CheckContext): Promise<DomainCheckResult[]> {
   return [{ ...base, status, summary, details, fix }];
 }
 
+/** The same explanation attaches to every DKIM result, healthy or not. */
+const DKIM_PURPOSE =
+  'A DKIM key lets a receiver prove that a message was signed by this domain and was not altered in transit. Without it, a forwarded or forged message cannot be told apart by signature, and DMARC alignment rests on SPF alone.';
+
 async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
   if (ctx.dkimSelectors.length === 0) {
     return [
@@ -847,6 +868,7 @@ async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
         id: 'dkim',
         label: 'DKIM keys',
         status: 'skipped',
+        purpose: DKIM_PURPOSE,
         summary: 'no DKIM selectors are configured, so no key was checked',
         fix: 'Add the selectors your mail provider publishes (Mailjet uses "mailjet", Microsoft 365 uses "selector1"/"selector2") - a checker cannot find keys it is not told about.',
       },
@@ -868,6 +890,7 @@ async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
             id,
             label,
             status: 'error',
+            purpose: DKIM_PURPOSE,
             summary: `no DKIM key is published for selector "${selector}" at ${name}`,
             fix: 'Publish the public key your mail provider gives you, or drop the selector from the check if it is retired.',
           };
@@ -876,6 +899,7 @@ async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
           id,
           label,
           status: 'error',
+          purpose: DKIM_PURPOSE,
           summary: `the DKIM lookup for selector "${selector}" failed: ${dnsFailure(error)}`,
           fix: 'Check that the selector name is spelled correctly and that the zone answers TXT queries.',
         };
@@ -890,6 +914,7 @@ async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
           id,
           label,
           status: 'error',
+          purpose: DKIM_PURPOSE,
           summary: `the DKIM key for selector "${selector}" is unusable: ${key.reason ?? 'unknown reason'}`,
           details,
           fix:
@@ -900,13 +925,14 @@ async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
       }
 
       if (key.algorithm === 'ed25519') {
-        return { id, label, status: 'ok', summary: `selector "${selector}" holds a valid Ed25519 key`, details };
+        return { id, label, status: 'ok', purpose: DKIM_PURPOSE, summary: `selector "${selector}" holds a valid Ed25519 key`, details };
       }
       if (key.algorithm === 'unknown') {
         return {
           id,
           label,
           status: 'warn',
+          purpose: DKIM_PURPOSE,
           summary: `selector "${selector}" uses an algorithm this checker does not understand`,
           details,
           fix: 'Verify the k= tag against your mail provider documentation.',
@@ -919,6 +945,7 @@ async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
           id,
           label,
           status: 'error',
+          purpose: DKIM_PURPOSE,
           summary: `selector "${selector}" uses a ${bits}-bit RSA key, below the 1024-bit floor of RFC 8301`,
           details,
           fix: 'Rotate to at least 2048 bits; short keys are cheap to factor and receivers may refuse them.',
@@ -929,6 +956,7 @@ async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
           id,
           label,
           status: 'warn',
+          purpose: DKIM_PURPOSE,
           summary: `selector "${selector}" uses a ${bits}-bit RSA key, which is the old minimum rather than the current recommendation`,
           details,
           fix: 'Rotate to a 2048-bit key at your mail provider and bump the selector.',
@@ -941,6 +969,7 @@ async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
           // 2048 is the current recommendation, so a key at that size is simply correct -
           // reporting it as merely informational made a healthy domain look untouched.
           status: 'ok',
+          purpose: DKIM_PURPOSE,
           summary: `selector "${selector}" holds a valid 2048-bit RSA key`,
           details,
         };
@@ -949,6 +978,7 @@ async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
         id,
         label,
         status: 'ok',
+        purpose: DKIM_PURPOSE,
         summary: `selector "${selector}" holds a valid ${bits}-bit RSA key`,
         details,
       };
@@ -962,6 +992,7 @@ async function checkDkim(ctx: CheckContext): Promise<DomainCheckResult[]> {
           id: `dkim:${ctx.dkimSelectors[index]}`,
           label: `DKIM key (${ctx.dkimSelectors[index]})`,
           status: 'error' as CheckStatus,
+          purpose: DKIM_PURPOSE,
           summary: `the DKIM check for selector "${ctx.dkimSelectors[index]}" failed: ${describeError(outcome.reason)}`,
         },
   );
@@ -1001,7 +1032,12 @@ function parseMtaStsPolicy(body: string): { mode: string; maxAge: string | null;
 }
 
 async function checkMtaSts(ctx: CheckContext): Promise<DomainCheckResult[]> {
-  const base = { id: 'mta-sts', label: 'MTA-STS' };
+  const base = {
+    id: 'mta-sts',
+    label: 'MTA-STS',
+    purpose:
+      'MTA-STS tells senders to encrypt mail in transit to the domain and to refuse delivery if TLS cannot be negotiated. Without it, an attacker on the network can downgrade the connection and read or alter the mail without either side noticing.',
+  };
   const name = `_mta-sts.${ctx.domain}`;
   const policyUrl = `https://mta-sts.${ctx.domain}/.well-known/mta-sts.txt`;
 
@@ -1127,7 +1163,12 @@ async function checkMtaSts(ctx: CheckContext): Promise<DomainCheckResult[]> {
 }
 
 async function checkTlsRpt(ctx: CheckContext): Promise<DomainCheckResult[]> {
-  const base = { id: 'tls-rpt', label: 'TLS-RPT report destination' };
+  const base = {
+    id: 'tls-rpt',
+    label: 'TLS-RPT report destination',
+    purpose:
+      'TLS-RPT asks receiving servers to report failures and downgrades of TLS delivery. Without it, a TLS problem - including one caused by MTA-STS enforcement - is invisible until mail stops arriving.',
+  };
   const name = `_smtp._tls.${ctx.domain}`;
 
   let records: string[];
@@ -1185,7 +1226,12 @@ async function checkTlsRpt(ctx: CheckContext): Promise<DomainCheckResult[]> {
 }
 
 async function checkBimi(ctx: CheckContext): Promise<DomainCheckResult[]> {
-  const base = { id: 'bimi', label: 'BIMI' };
+  const base = {
+    id: 'bimi',
+    label: 'BIMI',
+    purpose:
+      'BIMI attaches a verified logo to mail from the domain in supporting mailbox providers. Without it, the messages look like any other mail and are easier to imitate.',
+  };
   const name = `default._bimi.${ctx.domain}`;
 
   let records: string[];
@@ -1272,7 +1318,12 @@ async function checkBimi(ctx: CheckContext): Promise<DomainCheckResult[]> {
 }
 
 async function checkAutodiscover(ctx: CheckContext): Promise<DomainCheckResult[]> {
-  const base = { id: 'autodiscover', label: 'Mail client autodiscovery' };
+  const base = {
+    id: 'autodiscover',
+    label: 'Mail client autodiscovery',
+    purpose:
+      'The autoconfig and autodiscover hostnames let a mail client find the IMAP and SMTP settings from just the address. Without them, every user has to be told the server names and ports by hand.',
+  };
   const names = [`autoconfig.${ctx.domain}`, `autodiscover.${ctx.domain}`];
   const details: string[] = [];
   let published = 0;
@@ -1313,7 +1364,12 @@ async function checkAutodiscover(ctx: CheckContext): Promise<DomainCheckResult[]
 }
 
 async function checkCaa(ctx: CheckContext): Promise<DomainCheckResult[]> {
-  const base = { id: 'caa', label: 'CAA records' };
+  const base = {
+    id: 'caa',
+    label: 'CAA records',
+    purpose:
+      'CAA names the certificate authorities that may issue certificates for the domain. Without it, any CA can issue for the domain, and a mis-issued certificate cannot be refused automatically.',
+  };
   if (!ctx.resolver.resolveCaa) {
     return [
       {
@@ -1419,6 +1475,7 @@ export async function checkDomain(domain: string, options: DomainCheckOptions = 
           id: 'domain',
           label: 'Domain name',
           status: 'error',
+          purpose: 'The checks only mean anything for a real domain name, so it is validated before any lookup is made.',
           summary: `"${domain}" is not a valid domain name, so nothing was checked`,
           fix: 'Pass a bare registrable name such as "example.com" - no scheme, no path.',
         },
@@ -1451,6 +1508,7 @@ export async function checkDomain(domain: string, options: DomainCheckOptions = 
       id: check.id,
       label: check.label,
       status: 'error',
+      purpose: 'Every check is reported even when it fails unexpectedly, so one broken check cannot hide the state of the others.',
       summary: `the ${check.id} check failed unexpectedly: ${describeError(outcome.reason)}`,
       fix: 'This looks like a bug in the checker or an unexpected DNS answer; the other checks ran normally.',
     });

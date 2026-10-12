@@ -5,8 +5,8 @@
     <!-- Navigation -->
     <nav v-if="$route.name !== 'Login'" class="bg-surface shadow-sm border-b border-gray-200">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between h-16">
-          <div class="flex">
+        <div class="flex justify-between h-16 min-w-0 gap-4">
+          <div class="flex min-w-0">
             <!-- Logo -->
             <div class="flex-shrink-0 flex items-center">
               <router-link to="/" class="flex items-center space-x-2">
@@ -15,112 +15,75 @@
               </router-link>
             </div>
 
-            <!-- Navigation links -->
-            <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+            <!-- Inline links are the daily working set, text only. The row used to hold
+                 all seven links with an icon each, and the icons are what pushed it into
+                 the right-hand group below ~1200px. -->
+            <div class="hidden lg:flex lg:ml-6 lg:items-center lg:space-x-6 min-w-0">
               <router-link
-                to="/"
+                v-for="link in primaryNavLinks"
+                :key="link.to"
+                :to="link.to"
                 class="nav-link"
-                :class="{ 'nav-link-active': $route.name === 'Dashboard' }"
-                :aria-current="$route.name === 'Dashboard' ? 'page' : undefined"
+                :class="{ 'nav-link-active': isActive(link) }"
+                :aria-current="isActive(link) ? 'page' : undefined"
               >
-                <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-                Dashboard
+                {{ link.label }}
               </router-link>
-              <router-link
-                to="/reports"
+            </div>
+
+            <!-- Anything that has not earned an inline slot lives one level down. -->
+            <div
+              v-if="moreNavLinks.length"
+              ref="moreMenuRef"
+              class="relative hidden lg:ml-6 lg:flex lg:items-center"
+            >
+              <button
+                type="button"
                 class="nav-link"
-                :class="{ 'nav-link-active': $route.name === 'Reports' || $route.name === 'ReportDetail' }"
-                :aria-current="
-                  $route.name === 'Reports' || $route.name === 'ReportDetail' ? 'page' : undefined
-                "
+                aria-haspopup="true"
+                aria-controls="more-menu"
+                :aria-expanded="moreMenuOpen"
+                :class="{ 'nav-link-active': moreMenuActive }"
+                @click="moreMenuOpen = !moreMenuOpen"
               >
-                <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Reports
-              </router-link>
-              <router-link
-                to="/processing-logs"
-                class="nav-link"
-                :class="{ 'nav-link-active': $route.name === 'ProcessingLogs' }"
-                :aria-current="$route.name === 'ProcessingLogs' ? 'page' : undefined"
+                More
+                <component
+                  :is="chevronDownIcon"
+                  class="w-4 h-4 ml-1 transition-transform duration-200"
+                  :class="{ 'rotate-180': moreMenuOpen }"
+                />
+              </button>
+
+              <div
+                v-if="moreMenuOpen"
+                id="more-menu"
+                class="absolute left-0 top-full z-30 mt-1 w-48 p-1 card"
               >
-                <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M9 17v-2h6v2a2 2 0 002 2h1a2 2 0 002-2V7a2 2 0 00-2-2h-1a2 2 0 00-2 2v2H9V7a2 2 0 00-2-2H6a2 2 0 00-2 2v10a2 2 0 002 2h1a2 2 0 002-2z"
-                  />
-                </svg>
-                Processing Logs
-              </router-link>
-              <router-link
-                to="/forensics"
-                class="nav-link"
-                :class="{ 'nav-link-active': $route.name === 'Forensics' || $route.name === 'ForensicDetail' }"
-                :aria-current="
-                  $route.name === 'Forensics' || $route.name === 'ForensicDetail' ? 'page' : undefined
-                "
-              >
-                <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16a2 2 0 001.73 3z" />
-                </svg>
-                Forensics
-              </router-link>
-              <router-link
-                to="/domains"
-                class="nav-link"
-                :class="{ 'nav-link-active': $route.name === 'Domains' }"
-                :aria-current="$route.name === 'Domains' ? 'page' : undefined"
-              >
-                <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18a15 15 0 010-18z" />
-                </svg>
-                Domains
-              </router-link>
-              <template v-if="isAdmin">
                 <router-link
-                  to="/admin/settings"
-                  class="nav-link"
-                  :class="{ 'nav-link-active': $route.name === 'AdminSettings' }"
-                  :aria-current="$route.name === 'AdminSettings' ? 'page' : undefined"
+                  v-for="link in moreNavLinks"
+                  :key="link.to"
+                  :to="link.to"
+                  class="block px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                  :class="{ 'bg-primary-50 text-primary-700': isActive(link) }"
+                  :aria-current="isActive(link) ? 'page' : undefined"
+                  @click="moreMenuOpen = false"
                 >
-                  <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  Settings
+                  {{ link.label }}
                 </router-link>
-                <router-link
-                  to="/admin/users"
-                  class="nav-link"
-                  :class="{ 'nav-link-active': $route.name === 'AdminUsers' }"
-                  :aria-current="$route.name === 'AdminUsers' ? 'page' : undefined"
-                >
-                  <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                  Users
-                </router-link>
-              </template>
+              </div>
             </div>
           </div>
 
           <!-- Right side -->
-          <div class="flex items-center space-x-4">
-            <!-- Health status -->
-            <div class="hidden items-center space-x-2 sm:flex">
+          <div class="flex flex-shrink-0 items-center gap-3 lg:gap-4">
+            <!-- Health is a dot only: the wording sits in the title and an sr-only span,
+                 so it can never widen the row. -->
+            <div class="hidden lg:flex items-center" :title="healthLabel">
               <div
                 class="w-2 h-2 rounded-full"
                 :class="healthStatus === 'ok' ? 'bg-success-500' : 'bg-danger-500'"
               ></div>
-              <span class="text-sm text-gray-600">
-                {{ healthStatus === 'ok' ? 'Online' : 'Offline' }}
-              </span>
+              <span class="sr-only">{{ healthLabel }}</span>
             </div>
 
             <!-- Theme -->
@@ -135,7 +98,7 @@
             </button>
 
             <!-- Session -->
-            <div class="hidden items-center space-x-3 sm:flex">
+            <div class="hidden lg:flex items-center gap-3">
               <router-link
                 :to="{ name: 'Account' }"
                 class="text-right hover:opacity-80"
@@ -143,7 +106,9 @@
                 :aria-current="$route.name === 'Account' ? 'page' : undefined"
               >
                 <p class="text-sm text-gray-900">{{ userEmail }}</p>
-                <p class="text-xs text-gray-500">
+                <!-- The role line is the least informative part of the block, so it is
+                     the first thing to drop when the header gets tight. -->
+                <p class="hidden xl:block text-xs text-gray-500">
                   {{ isAdmin ? 'Administrator' : 'User' }} · Account
                 </p>
               </router-link>
@@ -151,7 +116,7 @@
             </div>
 
             <!-- Mobile menu button -->
-            <div class="sm:hidden">
+            <div class="lg:hidden">
               <button
                 @click="mobileMenuOpen = !mobileMenuOpen"
                 class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500"
@@ -169,92 +134,22 @@
         </div>
       </div>
 
-      <!-- Mobile menu -->
-      <div v-if="mobileMenuOpen" id="mobile-menu" class="sm:hidden">
+      <!-- Mobile menu: the same link arrays as the desktop row, so the list only has to
+           be maintained once. -->
+      <div v-if="mobileMenuOpen" id="mobile-menu" class="lg:hidden">
         <div class="pt-2 pb-3 space-y-1">
           <router-link
-            to="/"
+            v-for="link in mobileNavLinks"
+            :key="link.to"
+            :to="link.to"
             class="mobile-nav-link"
-            :class="{ 'mobile-nav-link-active': $route.name === 'Dashboard' }"
-            :aria-current="$route.name === 'Dashboard' ? 'page' : undefined"
+            :class="{ 'mobile-nav-link-active': isActive(link) }"
+            :aria-current="isActive(link) ? 'page' : undefined"
             @click="mobileMenuOpen = false"
           >
-            Dashboard
+            {{ link.label }}
           </router-link>
-          <router-link
-            to="/reports"
-            class="mobile-nav-link"
-            :class="{ 'mobile-nav-link-active': $route.name === 'Reports' || $route.name === 'ReportDetail' }"
-            :aria-current="
-              $route.name === 'Reports' || $route.name === 'ReportDetail' ? 'page' : undefined
-            "
-            @click="mobileMenuOpen = false"
-          >
-            Reports
-          </router-link>
-          <router-link
-            to="/processing-logs"
-            class="mobile-nav-link"
-            :class="{ 'mobile-nav-link-active': $route.name === 'ProcessingLogs' }"
-            :aria-current="$route.name === 'ProcessingLogs' ? 'page' : undefined"
-            @click="mobileMenuOpen = false"
-          >
-            Processing Logs
-          </router-link>
-          <router-link
-            to="/forensics"
-            class="mobile-nav-link"
-            :class="{ 'mobile-nav-link-active': $route.name === 'Forensics' || $route.name === 'ForensicDetail' }"
-            :aria-current="
-              $route.name === 'Forensics' || $route.name === 'ForensicDetail' ? 'page' : undefined
-            "
-            @click="mobileMenuOpen = false"
-          >
-            Forensics
-          </router-link>
-          <router-link
-            to="/domains"
-            class="mobile-nav-link"
-            :class="{ 'mobile-nav-link-active': $route.name === 'Domains' }"
-            :aria-current="$route.name === 'Domains' ? 'page' : undefined"
-            @click="mobileMenuOpen = false"
-          >
-            Domains
-          </router-link>
-          <router-link
-            to="/account"
-            class="mobile-nav-link"
-            :class="{ 'mobile-nav-link-active': $route.name === 'Account' }"
-            :aria-current="$route.name === 'Account' ? 'page' : undefined"
-            @click="mobileMenuOpen = false"
-          >
-            Account
-          </router-link>
-          <template v-if="isAdmin">
-            <router-link
-              to="/admin/settings"
-              class="mobile-nav-link"
-              :class="{ 'mobile-nav-link-active': $route.name === 'AdminSettings' }"
-              :aria-current="$route.name === 'AdminSettings' ? 'page' : undefined"
-              @click="mobileMenuOpen = false"
-            >
-              Settings
-            </router-link>
-            <router-link
-              to="/admin/users"
-              class="mobile-nav-link"
-              :class="{ 'mobile-nav-link-active': $route.name === 'AdminUsers' }"
-              :aria-current="$route.name === 'AdminUsers' ? 'page' : undefined"
-              @click="mobileMenuOpen = false"
-            >
-              Users
-            </router-link>
-          </template>
-          <button
-            type="button"
-            class="mobile-nav-link w-full text-left"
-            @click="signOut"
-          >
+          <button type="button" class="mobile-nav-link w-full text-left" @click="signOut">
             Sign out
           </button>
         </div>
@@ -279,8 +174,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onUnmounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { healthApi } from '@/api/client';
 import { useAuth } from '@/composables/useAuth';
 import { useBranding } from '@/composables/useBranding';
@@ -288,13 +183,57 @@ import { useTheme } from '@/composables/useTheme';
 import BrandMark from '@/components/BrandMark.vue';
 import ToastHost from '@/components/ToastHost.vue';
 
+interface NavLink {
+  label: string;
+  to: string;
+  /** Route names that keep this link highlighted - a detail route keeps its list lit. */
+  activeFor: string[];
+}
+
 // State
 const mobileMenuOpen = ref(false);
+const moreMenuOpen = ref(false);
+const moreMenuRef = ref<HTMLElement | null>(null);
 const healthStatus = ref<'ok' | 'error'>('ok');
 const globalLoading = ref(false);
 
+const route = useRoute();
 const router = useRouter();
 const { state, isAdmin, logout } = useAuth();
+
+// The desktop row carries only the daily working set; the rest goes behind "More".
+const primaryNavLinks: NavLink[] = [
+  { label: 'Dashboard', to: '/', activeFor: ['Dashboard'] },
+  { label: 'Reports', to: '/reports', activeFor: ['Reports', 'ReportDetail'] },
+  { label: 'Forensics', to: '/forensics', activeFor: ['Forensics', 'ForensicDetail'] },
+  { label: 'Domains', to: '/domains', activeFor: ['Domains'] },
+];
+
+const accountNavLink: NavLink = { label: 'Account', to: '/account', activeFor: ['Account'] };
+
+// Derived from isAdmin rather than declared per role, so a non-admin simply gets a
+// shorter menu instead of a second hardcoded list.
+const moreNavLinks = computed<NavLink[]>(() => [
+  { label: 'Processing Logs', to: '/processing-logs', activeFor: ['ProcessingLogs'] },
+  ...(isAdmin.value
+    ? [
+        { label: 'Settings', to: '/admin/settings', activeFor: ['AdminSettings'] },
+        { label: 'Users', to: '/admin/users', activeFor: ['AdminUsers'] },
+      ]
+    : []),
+]);
+
+// The mobile panel is the desktop row plus the overflow plus Account: below lg the
+// session block is hidden, so Account has to be reachable from here.
+const mobileNavLinks = computed<NavLink[]>(() => [
+  ...primaryNavLinks,
+  ...moreNavLinks.value,
+  accountNavLink,
+]);
+
+const isActive = (link: NavLink) => link.activeFor.includes(String(route.name));
+
+const moreMenuActive = computed(() => moreNavLinks.value.some(isActive));
 
 const branding = useBranding();
 branding.load();
@@ -325,10 +264,66 @@ const themeLabel = computed(
   () => `Theme: ${theme.value}. Switch to ${nextTheme.value}.`,
 );
 
+// The chevron rotates via the template's class binding; declared with h() to match the
+// theme icons rather than adding another inline svg to the header markup.
+const chevronDownIcon = () =>
+  h(
+    'svg',
+    {
+      fill: 'none',
+      viewBox: '0 0 24 24',
+      stroke: 'currentColor',
+      'stroke-width': 2,
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+    },
+    [h('path', { d: 'm6 9 6 6 6-6' })],
+  );
+
+// Health wording lives in the dot's title/sr-only text, so status stays a two-line
+// concern here rather than three copies of the ternary in the template.
+const healthLabel = computed(() =>
+  healthStatus.value === 'ok' ? 'Parser online' : 'Parser offline',
+);
+
 const signOut = async () => {
   await logout();
   await router.push({ name: 'Login' });
 };
+
+// Closing on route change means a click on a panel item can never leave the panel
+// hanging over the page it just navigated to.
+watch(
+  () => route.fullPath,
+  () => {
+    moreMenuOpen.value = false;
+  },
+);
+
+// The panel is a disclosure, not a focus trap, so pointer-outside and Escape both
+// dismiss it. Bound on document because a click on the page body must close it too.
+const onDocumentPointerDown = (event: MouseEvent) => {
+  if (moreMenuRef.value && !moreMenuRef.value.contains(event.target as Node)) {
+    moreMenuOpen.value = false;
+  }
+};
+
+const onDocumentKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') {
+    moreMenuOpen.value = false;
+  }
+};
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointerDown);
+  document.addEventListener('keydown', onDocumentKeydown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown);
+  document.removeEventListener('keydown', onDocumentKeydown);
+  stopHealthChecks();
+});
 
 // Health check
 const checkHealth = async () => {
@@ -368,8 +363,6 @@ watch(
   (user) => (user ? startHealthChecks() : stopHealthChecks()),
   { immediate: true }
 );
-
-onUnmounted(stopHealthChecks);
 </script>
 
 <style scoped>

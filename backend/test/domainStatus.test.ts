@@ -214,7 +214,7 @@ await test('SPF: a single good record passes and reports the lookup budget', asy
   const spf = byId(report.results, 'spf');
   assert.equal(spf.status, 'ok');
   assert.match(spf.summary, /-all/);
-  assert.match(spf.details?.join('\n') ?? '', /DNS lookups used: 1 of 10/);
+  assert.match(spf.details?.join('\n') ?? '', /SPF DNS lookups: 1 of the 10 a receiver may use/);
 });
 
 await test('SPF: a missing record is an error', async () => {
@@ -572,6 +572,10 @@ await test('the report status is the worst result, and info/skipped never drag i
     'a 2048-bit key is the recommendation, so it is a pass rather than a note',
   );
   assert.ok(healthy.results.every((result) => result.status === 'ok' || result.status === 'info'));
+  assert.ok(
+    healthy.results.every((result) => typeof result.purpose === 'string' && result.purpose.length > 20),
+    'every check explains what the record is for',
+  );
   assert.deepEqual(healthy.dkimSelectors, ['mailjet']);
   assert.equal(healthy.domain, DOMAIN);
   assert.ok(Date.parse(healthy.checkedAt) > 0);

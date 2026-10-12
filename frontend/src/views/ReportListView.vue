@@ -24,14 +24,7 @@
               <label for="domain-filter" class="block text-sm font-medium text-gray-700 mb-1">
                 Domain
               </label>
-              <input
-                id="domain-filter"
-                v-model="filters.domain"
-                type="text"
-                placeholder="Filter by domain..."
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                @input="debouncedFilter"
-              />
+              <DomainSelect id="domain-filter" v-model="filters.domain" @change="applyFilters" />
             </div>
             <div>
               <label for="org-filter" class="block text-sm font-medium text-gray-700 mb-1">
@@ -160,6 +153,7 @@
 import { ref, reactive, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import DataTable from '@/components/DataTable.vue';
+import DomainSelect from '@/components/DomainSelect.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { reportsApi } from '@/api/client';

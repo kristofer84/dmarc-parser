@@ -178,6 +178,24 @@
               <h3 class="text-lg leading-6 font-medium text-gray-900">Checks</h3>
               <p class="mt-1 text-sm text-gray-500">What the latest run found</p>
             </div>
+            <!-- The statuses only mean something as a scale, and the quiet ones are the ones
+                 most likely to be misread, so the scale is spelled out once here. -->
+            <div class="border-b border-gray-100 bg-surface-muted px-4 py-3 sm:px-6">
+              <p class="text-xs text-gray-500">
+                Most findings on a healthy domain are <span class="font-medium">info</span> — an
+                optional record that is simply not published, not a fault.
+              </p>
+              <ul class="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+                <li
+                  v-for="entry in STATUS_LEGEND"
+                  :key="entry.status"
+                  class="flex items-start gap-2"
+                >
+                  <StatusBadge :status="entry.status" kind="domain" class="mt-0.5 shrink-0" />
+                  <span class="text-xs text-gray-600">{{ entry.text }}</span>
+                </li>
+              </ul>
+            </div>
             <div class="divide-y divide-gray-100">
               <p v-if="latestResults.length === 0" class="p-6 text-sm text-gray-500">
                 This domain has not been checked yet.
@@ -187,6 +205,7 @@
                   <h4 class="text-sm font-medium text-gray-900">{{ result.label }}</h4>
                   <StatusBadge :status="result.status" kind="domain" icon />
                 </div>
+                <p v-if="result.purpose" class="mt-1 text-xs text-gray-500">{{ result.purpose }}</p>
                 <p class="mt-2 text-sm text-gray-700">{{ result.summary }}</p>
                 <div
                   v-if="result.details?.length"
@@ -254,6 +273,15 @@
                     placeholder="selector1, selector2"
                     class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                   />
+                  <p class="mt-1 text-xs text-gray-500">
+                    The <span class="font-mono">s=</span> tag of your DKIM signature — the name in
+                    front of <span class="font-mono">._domainkey</span>. Common ones:
+                    <span class="font-mono">mailjet</span> (Mailjet),
+                    <span class="font-mono">selector1</span>/<span class="font-mono">selector2</span>
+                    (Microsoft 365), <span class="font-mono">google</span> (Google Workspace),
+                    <span class="font-mono">default</span> (some providers). Leave it empty and the
+                    DKIM check is skipped, so this is what switches that check on.
+                  </p>
                 </div>
                 <div>
                   <label for="expected-mx" class="block text-sm font-medium text-gray-700 mb-1">
@@ -266,17 +294,43 @@
                     placeholder="mx1.example.com, mx2.example.com"
                     class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                   />
+                  <p class="mt-1 text-xs text-gray-500">
+                    Optional. When it is set, published MX hosts that are not in this list are
+                    flagged, so a silent MX change (or a hijack) shows up as a diff instead of
+                    passing unnoticed.
+                  </p>
                 </div>
-                <label class="inline-flex items-center cursor-pointer">
-                  <input
-                    v-model="edit.monitored"
-                    type="checkbox"
-                    class="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
-                  />
-                  <span class="ml-2 text-sm text-gray-700">
-                    Monitored by the scheduled check
-                  </span>
-                </label>
+                <div>
+                  <label class="inline-flex items-center cursor-pointer">
+                    <input
+                      v-model="edit.monitored"
+                      type="checkbox"
+                      class="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                    />
+                    <span class="ml-2 text-sm text-gray-700">
+                      Monitored by the scheduled check
+                    </span>
+                  </label>
+                  <p class="mt-1 text-xs text-gray-500">
+                    Off keeps the domain and its history but leaves it out of the background check.
+                  </p>
+                </div>
+                <div>
+                  <label for="domain-notes" class="block text-sm font-medium text-gray-700 mb-1">
+                    Notes
+                  </label>
+                  <textarea
+                    id="domain-notes"
+                    v-model="edit.notes"
+                    rows="2"
+                    placeholder="Mailjet signs this domain"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                  ></textarea>
+                  <p class="mt-1 text-xs text-gray-500">
+                    Free text for you — for example which provider signs this domain. It is shown
+                    beside the domain in the list; nothing reads it automatically.
+                  </p>
+                </div>
                 <div class="flex items-center space-x-3">
                   <button
                     class="btn btn-primary text-sm"
@@ -299,6 +353,13 @@
             </div>
           </div>
         </div>
+
+        <!-- Read-only for everyone, admin or not: it is advice about DNS, not a change to this app. -->
+        <RecordSuggestionsPanel
+          :key="detail.domain.id"
+          :domain-id="detail.domain.id"
+          :domain-name="detail.domain.name"
+        />
       </template>
 
       <p v-else class="text-sm text-gray-500">Select a domain to see its checks and history.</p>
@@ -314,6 +375,7 @@ import ChartView from '@/components/ChartView.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import CopyButton from '@/components/CopyButton.vue';
+import RecordSuggestionsPanel from '@/components/RecordSuggestionsPanel.vue';
 import Sparkline from '@/components/Sparkline.vue';
 import { domainsApi } from '@/api/client';
 import { useAsyncData } from '@/composables/useApi';
@@ -349,6 +411,19 @@ const CHECK_COLUMNS = [
   { id: 'mta-sts', label: 'MTA-STS' },
   { id: 'tls-rpt', label: 'TLS-RPT' },
   { id: 'bimi', label: 'BIMI' },
+];
+
+/** The status scale, in the order a reader meets it. Plain words, because no badge can say
+ *  on its own that `info` is a nudge and `skipped` is not a fault. */
+const STATUS_LEGEND: Array<{ status: DomainCheckStatus; text: string }> = [
+  { status: 'ok', text: 'published and correct' },
+  { status: 'warn', text: 'works, but weaker than recommended' },
+  { status: 'error', text: 'broken, or missing where it is required' },
+  { status: 'info', text: 'optional record that is not published — a nudge, not a fault' },
+  {
+    status: 'skipped',
+    text: 'not checked, because something it needs is missing (e.g. no DKIM selectors configured)',
+  },
 ];
 
 const STATUS_SEVERITY: Record<DomainCheckStatus, number> = {
@@ -388,7 +463,7 @@ const checkingAll = ref(false);
 const savingEdit = ref(false);
 const removing = ref(false);
 
-const edit = reactive({ dkimSelectors: '', expectedMx: '', monitored: true });
+const edit = reactive({ dkimSelectors: '', expectedMx: '', monitored: true, notes: '' });
 
 const statusDot = (status: string): string => {
   if (status === 'ok') return 'bg-success-500';
@@ -473,6 +548,7 @@ const loadDetail = async (id: string) => {
     edit.dkimSelectors = result.domain.dkimSelectors.join(', ');
     edit.expectedMx = result.domain.expectedMx.join(', ');
     edit.monitored = result.domain.monitored;
+    edit.notes = result.domain.notes ?? '';
   } catch (err) {
     detail.value = null;
     detailError.value = err instanceof Error ? err.message : 'Failed to load this domain';
@@ -615,6 +691,8 @@ const saveEdit = async () => {
       dkimSelectors: splitList(edit.dkimSelectors),
       expectedMx: splitList(edit.expectedMx),
       monitored: edit.monitored,
+      // Sent even when empty, because a cleared box means "remove the note", not "keep it".
+      notes: edit.notes.trim(),
     });
     detail.value = { ...current, domain: updated };
     toast.success('Saved');

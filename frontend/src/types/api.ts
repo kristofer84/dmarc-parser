@@ -265,6 +265,8 @@ export interface DomainCheckResult {
   label: string;
   status: DomainCheckStatus;
   summary: string;
+  /** What the record does and what breaks without it - shown with every result. */
+  purpose: string;
   details?: string[];
   fix?: string;
 }
@@ -313,6 +315,61 @@ export interface DomainHistoryEntry {
 export interface DomainDetail {
   domain: DomainSummary;
   history: DomainHistoryEntry[];
+}
+
+export type GeneratedRecordId =
+  | 'spf'
+  | 'dmarc'
+  | 'dkim'
+  | 'mta-sts'
+  | 'tls-rpt'
+  | 'caa'
+  | 'autodiscover';
+
+/** `missing`/`outdated` are faults, `needs-input` is a question for the operator, `ok` is done. */
+export type GeneratedRecordStatus = 'missing' | 'ok' | 'outdated' | 'needs-input';
+
+/** One selectable SPF include, e.g. Mailjet's `_spf.mailjet.com`. */
+export interface SpfProvider {
+  id: string;
+  label: string;
+  include: string;
+  docs: string;
+}
+
+export interface GeneratedRecord {
+  id: GeneratedRecordId;
+  label: string;
+  /** What this record is for, in the same voice as DomainCheckResult.purpose. */
+  purpose: string;
+  status: GeneratedRecordStatus;
+  /** '@', '_dmarc', 'mailjet._domainkey', ... */
+  host: string;
+  type: 'TXT' | 'CNAME' | 'A';
+  value: string;
+  ttl: number;
+  /** The gotchas: lookup limits, propagation, provider caveats. */
+  notes: string[];
+  /** MTA-STS only: the policy document that has to be served at that path. */
+  companionFile?: { path: string; content: string };
+  /** DKIM only: where this selector's key comes from. */
+  providerHint?: string;
+}
+
+export interface RecordSuggestions {
+  domain: string;
+  generatedAt: string;
+  providers: SpfProvider[];
+  records: GeneratedRecord[];
+}
+
+/** Omitted keys mean "whatever the server would generate on its own". */
+export interface RecordSuggestionOptions {
+  providers?: string[];
+  dmarcPolicy?: 'none' | 'quarantine' | 'reject';
+  rua?: string;
+  ruf?: string;
+  mtaStsMode?: 'testing' | 'enforce';
 }
 
 export interface DomainHealthSummary {

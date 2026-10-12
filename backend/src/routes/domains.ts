@@ -1,6 +1,13 @@
 import express from 'express';
 import { prisma } from '../db/prisma.js';
 import { rateLimit } from '../middleware/validation.js';
+import type { DomainCheckResult } from '../services/domainStatus.js';
+import { resolveMailboxConfig } from '../services/mailboxConfig.js';
+import {
+  generateRecords,
+  type DmarcPolicy,
+  type MtaStsMode,
+} from '../services/recordSuggestions.js';
 import {
   getDomainScope,
   requireAdmin,
@@ -154,6 +161,100 @@ router.post('/:id/check', rateLimit(20, 60000), async (req: AuthenticatedRequest
   try {
     const report = await runDomainCheck(existing.id);
     return res.json(report);
+  } catch (error) {
+    const typed = error as Error & { statusCode?: number; code?: string };
+    return sendError(res, typed.statusCode ?? 500, typed.code ?? 'INTERNAL_SERVER_ERROR', typed.message);
+  }
+});
+
+// POST /domains/:id/records - the DNS records this domain should publish
+router.post('/:id/records', rateLimit(20, 60000), async (req: AuthenticatedRequest, res) => {
+  const scope = await getDomainScope(req);
+  const existing = await prisma.domain.findUnique({ where: { id: req.params.id } });
+
+  // Out of scope answers 404, exactly like GET /domains/:id.
+  if (!existing || (scope !== null && !scope.includes(existing.name))) {
+    return sendError(res, 404, 'NOT_FOUND', 'Domain not found');
+  }
+
+  const { providers, dmarcPolicy, rua, ruf, mtaStsMode } = (req.body ?? {}) as Record<string, unknown>;
+  const dmarcPolicies: readonly string[] = ['none', 'quarantine', 'reject'];
+  const mtaStsModes: readonly string[] = ['testing', 'enforce'];
+
+  if (providers !== undefined && (!Array.isArray(providers) || providers.some((entry) => typeof entry !== 'string'))) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'providers must be an array of provider ids');
+  }
+  if (dmarcPolicy !== undefined && (typeof dmarcPolicy !== 'string' || !dmarcPolicies.includes(dmarcPolicy))) {
+    return sendError(res, 400, 'VALIDATION_ERROR', `dmarcPolicy must be one of ${dmarcPolicies.join(', ')}`);
+  }
+  if (mtaStsMode !== undefined && (typeof mtaStsMode !== 'string' || !mtaStsModes.includes(mtaStsMode))) {
+    return sendError(res, 400, 'VALIDATION_ERROR', `mtaStsMode must be one of ${mtaStsModes.join(', ')}`);
+  }
+  if (rua !== undefined && typeof rua !== 'string') {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'rua must be a string');
+  }
+  if (ruf !== undefined && typeof ruf !== 'string') {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'ruf must be a string');
+  }
+
+  try {
+    let check = await prisma.domainCheck.findFirst({
+      where: { domainId: existing.id },
+      orderBy: { runAt: 'desc' },
+    });
+
+    // The generator needs the current record state and the resolved MX hosts. Replying
+    // "run a check first" would only make the caller do the same thing in a second round
+    // trip, so the first request for a never-checked domain runs the check inline.
+    if (!check) {
+      await runDomainCheck(existing.id);
+      check = await prisma.domainCheck.findFirst({
+        where: { domainId: existing.id },
+        orderBy: { runAt: 'desc' },
+      });
+    }
+
+    let current: DomainCheckResult[] = [];
+    if (check) {
+      try {
+        const parsed = JSON.parse(check.resultsJson);
+        if (Array.isArray(parsed)) {
+          current = parsed as DomainCheckResult[];
+        }
+      } catch {
+        // A corrupted stored report is treated as "nothing known", not as a failed request.
+      }
+    }
+
+    const mxResult = current.find((result) => result.id === 'mx');
+    const mxHosts = (mxResult?.details ?? [])
+      .map((detail) => /^priority \d+: (.+)$/.exec(detail.trim())?.[1])
+      .filter((host): host is string => Boolean(host));
+
+    const mailbox = await resolveMailboxConfig();
+
+    const generated = await generateRecords({
+      domain: existing.name,
+      current,
+      mxHosts,
+      mailboxAddress: mailbox.config?.user ?? null,
+      ...(providers === undefined ? {} : { providers: providers as string[] }),
+      ...(dmarcPolicy === undefined ? {} : { dmarcPolicy: dmarcPolicy as DmarcPolicy }),
+      ...(rua === undefined ? {} : { rua: rua as string }),
+      ...(ruf === undefined ? {} : { ruf: ruf as string }),
+      ...(mtaStsMode === undefined ? {} : { mtaStsMode: mtaStsMode as MtaStsMode }),
+    });
+
+    console.log(
+      `🧾 ${req.user!.email} generated record suggestions for ${existing.name} (${generated.records.length} record(s))`,
+    );
+
+    return res.json({
+      domain: existing.name,
+      generatedAt: new Date().toISOString(),
+      records: generated.records,
+      providers: generated.providers,
+    });
   } catch (error) {
     const typed = error as Error & { statusCode?: number; code?: string };
     return sendError(res, typed.statusCode ?? 500, typed.code ?? 'INTERNAL_SERVER_ERROR', typed.message);

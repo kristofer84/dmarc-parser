@@ -39,7 +39,7 @@
       </div>
 
       <!-- Dashboard content -->
-      <div v-else-if="data">
+      <div v-else-if="data && hasReports">
         <!-- Summary cards -->
         <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
           <SummaryCard
@@ -286,8 +286,11 @@
         </div>
       </div>
 
-      <!-- Empty state -->
+      <!-- Empty state. The API answers with a zeroed summary rather than null when there is
+           nothing yet, so `data` alone cannot decide this - and without a guard here the
+           empty state rendered underneath a perfectly populated dashboard. -->
       <EmptyState
+        v-else
         icon="chart"
         title="No DMARC data available"
         description="Start by processing some DMARC reports to see your dashboard metrics."
@@ -310,6 +313,11 @@ import { summaryApi, forensicsApi, domainsApi } from '@/api/client';
 const { data, loading, error, refresh } = useAsyncData(() => summaryApi.getSummary());
 
 // Forensic (RUF) figures; an empty mailbox is normal, so failures here stay quiet.
+// The API answers with a zeroed summary rather than null when nothing has been ingested yet,
+// so an empty dashboard is a valid response rather than a failed one - and only this
+// distinguishes "no reports" from "nothing loaded".
+const hasReports = computed(() => (data.value?.totalReports ?? 0) > 0);
+
 const { data: forensic } = useAsyncData(() => forensicsApi.summary());
 
 // Domain health; a fresh install has none, so failures here stay quiet too.
