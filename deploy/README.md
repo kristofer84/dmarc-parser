@@ -72,10 +72,28 @@ Expect `200` (the SPA shell) with the self-signed cert — the app itself then a
 
 ## 4. Certificate
 
+This host does **not** have `python3-certbot-nginx` installed, so `certbot --nginx` fails
+with "The requested nginx plugin does not appear to be installed". Use the webroot method
+(the same one new-address-setup.md prescribes for moja) and repoint the two
+`ssl_certificate` lines by hand:
+
 ```bash
-sudo certbot --nginx -d dmarc.xcds.net
+sudo mkdir -p /var/www/html/root
+sudo certbot certonly --webroot -w /var/www/html/root -d dmarc.xcds.net
+
+sudo sed -i \
+  -e 's#/etc/ssl/dmarc/fullchain.pem#/etc/letsencrypt/live/dmarc.xcds.net/fullchain.pem#' \
+  -e 's#/etc/ssl/dmarc/privkey.pem#/etc/letsencrypt/live/dmarc.xcds.net/privkey.pem#' \
+  /etc/nginx/sites-available/dmarc.xcds.net
+
+sudo nginx -t && sudo systemctl reload nginx
 sudo certbot renew --cert-name dmarc.xcds.net --dry-run
 ```
+
+`certonly --webroot` validation reads the ACME challenge from port 80, which is why the
+HTTP server block in the vhost (and not the redirect) owns that location. certbot installs
+its own renewal timer, so nothing further is needed — but the redirect is *not* added by
+certbot here; the vhost's port-80 block already returns 301.
 
 ## Notes that cost time if forgotten
 
