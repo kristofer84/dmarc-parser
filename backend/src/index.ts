@@ -4,6 +4,7 @@ import { config } from './config/env.js';
 import { initializeDatabase, disconnectDatabase } from './db/prisma.js';
 import { EmailProcessor } from './services/emailProcessor.js';
 import { ensureSettingsSeeded } from './services/settings.js';
+import { ensureAdminUser } from './services/auth.js';
 
 setupLogging();
 
@@ -27,6 +28,12 @@ async function startServer() {
       }
     } catch (error) {
       console.warn('⚠️ Failed to seed application settings:', error);
+    }
+
+    try {
+      await ensureAdminUser();
+    } catch (error) {
+      console.warn('⚠️ Failed to ensure an administrator account exists:', error);
     }
 
     // Create Express app

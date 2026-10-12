@@ -87,9 +87,13 @@ export function validateQueryString(req: Request, res: Response, next: NextFunct
 // Rate limiting middleware (simple in-memory implementation)
 const requestCounts = new Map<string, { count: number; resetTime: number }>();
 
-export function rateLimit(maxRequests: number = 100, windowMs: number = 60000) {
+export function rateLimit(maxRequests: number = 100, windowMs: number = 60000, bucket?: string) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const clientId = req.ip || 'unknown';
+    // The counter is per IP *and* per route: a shared counter let ordinary read
+    // traffic consume the (much smaller) login budget, so browsing the dashboard
+    // could lock everyone behind the same NAT out of signing in.
+    const routeKey = bucket ?? `${req.baseUrl}${req.route?.path ?? req.path}`;
+    const clientId = `${req.ip || 'unknown'}|${routeKey}`;
     const now = Date.now();
     
     const clientData = requestCounts.get(clientId);

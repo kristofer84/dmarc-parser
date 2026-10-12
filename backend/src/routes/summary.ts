@@ -1,8 +1,15 @@
 import express from 'express';
 import { prisma } from '../db/prisma.js';
 import { rateLimit } from '../middleware/validation.js';
+import {
+  getDomainScope,
+  requireAuth,
+  type AuthenticatedRequest,
+} from '../middleware/auth.js';
 
 const router = express.Router();
+
+router.use(requireAuth);
 
 export interface DashboardStats {
   totalReports: number;
@@ -34,15 +41,19 @@ export interface DashboardStats {
 // GET /summary - Get aggregated dashboard statistics
 router.get('/',
   rateLimit(20, 60000), // 20 requests per minute (expensive operation)
-  async (_req, res, next) => {
+  async (req: AuthenticatedRequest, res, next) => {
     try {
       console.log('🔄 Calculating dashboard statistics...');
 
+      // Dashboard statistics honour the caller's domain scope.
+      const scope = await getDomainScope(req as AuthenticatedRequest);
+      const scopeWhere = scope === null ? {} : { domain: { in: scope } };
+
       // Get basic counts
-      const totalReports = await prisma.report.count();
+      const totalReports = await prisma.report.count({ where: scopeWhere });
 
       if (totalReports === 0) {
-        // Return empty stats if no reports
+        // Return empty stats if no reports are visible to this caller
         const emptyStats: DashboardStats = {
           totalReports: 0,
           totalMessages: 0,
@@ -57,8 +68,9 @@ router.get('/',
         return res.json(emptyStats);
       }
 
-      // Get all reports with records for calculations
+      // Get all visible reports with records for calculations
       const reports = await prisma.report.findMany({
+        where: scopeWhere,
         include: {
           records: true,
         },

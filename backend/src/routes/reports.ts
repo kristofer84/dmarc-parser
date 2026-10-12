@@ -8,8 +8,16 @@ import {
   validateQueryString,
   rateLimit
 } from '../middleware/validation.js';
+import {
+  getDomainScope,
+  requireAuth,
+  type AuthenticatedRequest,
+} from '../middleware/auth.js';
 
 const router = express.Router();
+
+// Report data is behind authentication; non-admins are limited to their assigned domains.
+router.use(requireAuth);
 
 export interface ReportSummary {
   id: string;
@@ -53,23 +61,42 @@ router.get('/',
       const sortOrder = req.query.sortOrder as string || 'desc';
 
       // Build WHERE conditions for case-insensitive search
-      let whereClause = '';
-      let whereClauseWithAlias = '';
+      const conditions: string[] = [];
+      const conditionsWithAlias: string[] = [];
       const queryParams: any[] = [];
 
       if (domain && orgName) {
-        whereClause = 'WHERE LOWER(domain) LIKE LOWER(?) AND LOWER(orgName) LIKE LOWER(?)';
-        whereClauseWithAlias = 'WHERE LOWER(r.domain) LIKE LOWER(?) AND LOWER(r.orgName) LIKE LOWER(?)';
+        conditions.push('LOWER(domain) LIKE LOWER(?) AND LOWER(orgName) LIKE LOWER(?)');
+        conditionsWithAlias.push('LOWER(r.domain) LIKE LOWER(?) AND LOWER(r.orgName) LIKE LOWER(?)');
         queryParams.push(`%${domain}%`, `%${orgName}%`);
       } else if (domain) {
-        whereClause = 'WHERE LOWER(domain) LIKE LOWER(?)';
-        whereClauseWithAlias = 'WHERE LOWER(r.domain) LIKE LOWER(?)';
+        conditions.push('LOWER(domain) LIKE LOWER(?)');
+        conditionsWithAlias.push('LOWER(r.domain) LIKE LOWER(?)');
         queryParams.push(`%${domain}%`);
       } else if (orgName) {
-        whereClause = 'WHERE LOWER(orgName) LIKE LOWER(?)';
-        whereClauseWithAlias = 'WHERE LOWER(r.orgName) LIKE LOWER(?)';
+        conditions.push('LOWER(orgName) LIKE LOWER(?)');
+        conditionsWithAlias.push('LOWER(r.orgName) LIKE LOWER(?)');
         queryParams.push(`%${orgName}%`);
       }
+
+      // A user scoped to particular domains must never see another domain's reports.
+      const scope = await getDomainScope(req as AuthenticatedRequest);
+      if (scope !== null) {
+        if (scope.length === 0) {
+          return res.json({
+            data: [],
+            pagination: { page, limit, total: 0, pages: 0 },
+          });
+        }
+        const placeholders = scope.map(() => '?').join(', ');
+        conditions.push(`LOWER(domain) IN (${placeholders})`);
+        conditionsWithAlias.push(`LOWER(r.domain) IN (${placeholders})`);
+        queryParams.push(...scope);
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      const whereClauseWithAlias =
+        conditionsWithAlias.length > 0 ? `WHERE ${conditionsWithAlias.join(' AND ')}` : '';
 
       // Build ORDER BY clause
       const validSortFields = ['domain', 'orgName', 'startDate', 'endDate', 'createdAt', 'totalMessages', 'spfPassRate', 'dkimPassRate', 'policyAction'];
@@ -198,6 +225,22 @@ router.get('/:id',
       });
 
       if (!report) {
+        const error: ErrorResponse = {
+          error: {
+            code: 'REPORT_NOT_FOUND',
+            message: `Report with ID ${id} not found`,
+          },
+          timestamp: new Date().toISOString(),
+          path: req.originalUrl,
+        };
+
+        return res.status(404).json(error);
+      }
+
+      // A scoped user must not read another domain's report by guessing its id; answer
+      // 404 rather than 403 so the ids cannot be probed either.
+      const detailScope = await getDomainScope(req as AuthenticatedRequest);
+      if (detailScope !== null && !detailScope.includes(report.domain.toLowerCase())) {
         const error: ErrorResponse = {
           error: {
             code: 'REPORT_NOT_FOUND',

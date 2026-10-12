@@ -129,3 +129,55 @@ model Setting {
 
   @@map("settings")
 }
+
+/// A console user. `role` is 'admin' (sees everything, manages users and settings)
+/// or 'user', which sees only the domains assigned in UserDomain.
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  name               String?
+  passwordHash       String
+  role               String    @default("user")
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(false)
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  sessions           Session[]
+  domains            UserDomain[]
+
+  @@map("users")
+}
+
+/// Opaque server-side sessions. Only the SHA-256 of the cookie token is stored.
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  ip         String?
+  userAgent  String?
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Which domains a non-admin user may see.
+model UserDomain {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  domain    String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, domain])
+  @@index([domain])
+  @@map("user_domains")
+}

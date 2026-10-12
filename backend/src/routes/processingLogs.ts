@@ -7,8 +7,15 @@ import {
   validateSorting,
   createValidationError,
 } from '../middleware/validation.js';
+import {
+  getDomainScope,
+  requireAuth,
+  type AuthenticatedRequest,
+} from '../middleware/auth.js';
 
 const router = express.Router();
+
+router.use(requireAuth);
 
 const VALID_STATUSES = ['started', 'success', 'skipped', 'error'];
 const SORT_FIELD_MAP: Record<string, keyof Prisma.ProcessingLogOrderByWithRelationInput> = {
@@ -43,6 +50,23 @@ router.get(
       }
 
       const where: Prisma.ProcessingLogWhereInput = {};
+
+      // Scoped users see only the logs of their own domains; logs with no linked report
+      // (rare, and only from a failed parse) stay administrator-only.
+      const scope = await getDomainScope(req as AuthenticatedRequest);
+      if (scope !== null) {
+        if (scope.length === 0) {
+          return res.json({ data: [], pagination: { page, limit, total: 0, pages: 0 } });
+        }
+        where.AND = [
+          {
+            OR: [
+              { report: { domain: { in: scope } } },
+              { forensicReport: { domain: { in: scope } } },
+            ],
+          },
+        ];
+      }
 
       if (status) {
         where.status = status;
@@ -93,6 +117,13 @@ router.get(
                 orgName: true,
               },
             },
+            forensicReport: {
+              select: {
+                id: true,
+                domain: true,
+                sourceIp: true,
+              },
+            },
           },
         }),
         prisma.processingLog.count({ where }),
@@ -112,6 +143,14 @@ router.get(
                 id: log.report.id,
                 domain: log.report.domain,
                 orgName: log.report.orgName,
+              }
+            : null,
+          forensicReportId: log.forensicReportId,
+          forensicReport: log.forensicReport
+            ? {
+                id: log.forensicReport.id,
+                domain: log.forensicReport.domain,
+                sourceIp: log.forensicReport.sourceIp,
               }
             : null,
         })),
