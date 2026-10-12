@@ -77,6 +77,50 @@
           />
         </div>
 
+        <!-- Forensic (RUF) failures -->
+        <div class="mb-8">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="text-lg font-medium text-gray-900">Authentication failures reported per message</h2>
+              <p class="text-sm text-gray-500">
+                Forensic (RUF) reports — individual mail that failed DMARC and was reported to your ruf= address
+              </p>
+            </div>
+            <router-link to="/forensics" class="btn btn-secondary text-sm">View all</router-link>
+          </div>
+
+          <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <SummaryCard title="Forensic Reports" :value="forensic?.total ?? 0" icon="warning" color="gray" />
+            <SummaryCard title="Last 24 Hours" :value="forensic?.last24h ?? 0" icon="messages" color="blue" />
+            <SummaryCard
+              title="Unverified Senders"
+              :value="forensic?.unverified ?? 0"
+              icon="shield"
+              :color="(forensic?.unverified ?? 0) > 0 ? 'yellow' : 'green'"
+            />
+            <SummaryCard title="Domains Affected" :value="forensic?.domains ?? 0" icon="reports" color="red" />
+          </div>
+
+          <div v-if="forensic?.topSources?.length" class="card mt-6">
+            <div class="card-header">
+              <h3 class="text-lg leading-6 font-medium text-gray-900">Top spoofing sources</h3>
+              <p class="mt-1 text-sm text-gray-500">Source IPs in reports that failed authentication</p>
+            </div>
+            <div class="card-body">
+              <div class="space-y-3">
+                <div
+                  v-for="source in forensic.topSources.slice(0, 5)"
+                  :key="source.sourceIp"
+                  class="flex items-center justify-between"
+                >
+                  <p class="font-mono text-sm text-gray-900">{{ source.sourceIp }}</p>
+                  <span class="badge badge-gray">{{ source.count }} report(s)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Charts grid -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <!-- Trends chart -->
@@ -205,10 +249,13 @@ import { computed } from 'vue';
 import SummaryCard from '@/components/SummaryCard.vue';
 import ChartView from '@/components/ChartView.vue';
 import { useAsyncData } from '@/composables/useApi';
-import { summaryApi } from '@/api/client';
+import { summaryApi, forensicsApi } from '@/api/client';
 
 // Fetch dashboard data
 const { data, loading, error, refresh } = useAsyncData(() => summaryApi.getSummary());
+
+// Forensic (RUF) figures; an empty mailbox is normal, so failures here stay quiet.
+const { data: forensic } = useAsyncData(() => forensicsApi.summary());
 
 // Transform data for charts
 const trendsChartData = computed(() => {
