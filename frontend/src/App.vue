@@ -105,10 +105,16 @@
 
             <!-- Session -->
             <div class="flex items-center space-x-3">
-              <div class="hidden sm:block text-right">
+              <router-link
+                :to="{ name: 'Account' }"
+                class="hidden sm:block text-right hover:opacity-80"
+                title="Account settings"
+              >
                 <p class="text-sm text-gray-900">{{ userEmail }}</p>
-                <p class="text-xs text-gray-500">{{ isAdmin ? 'Administrator' : 'User' }}</p>
-              </div>
+                <p class="text-xs text-gray-500">
+                  {{ isAdmin ? 'Administrator' : 'User' }} · Account
+                </p>
+              </router-link>
               <button @click="signOut" class="btn btn-secondary text-sm">Sign out</button>
             </div>
 
@@ -162,6 +168,14 @@
             @click="mobileMenuOpen = false"
           >
             Forensics
+          </router-link>
+          <router-link
+            to="/account"
+            class="mobile-nav-link"
+            :class="{ 'mobile-nav-link-active': $route.name === 'Account' }"
+            @click="mobileMenuOpen = false"
+          >
+            Account
           </router-link>
           <template v-if="isAdmin">
             <router-link

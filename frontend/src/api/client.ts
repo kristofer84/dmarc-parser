@@ -33,6 +33,10 @@ class ApiClient {
     this.client = axios.create({
       baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
       timeout: 10000,
+      // The session cookie is the credential. Same-origin requests carry it anyway, but
+      // the dev setup points VITE_API_BASE_URL at the host directly, which is cross-origin
+      // - without this the login response's Set-Cookie is silently dropped.
+      withCredentials: true,
       headers: {
         'Content-Type': 'application/json',
       },

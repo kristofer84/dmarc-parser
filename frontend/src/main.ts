@@ -11,6 +11,7 @@ import ForensicsView from './views/ForensicsView.vue'
 import LoginView from './views/LoginView.vue'
 import AdminSettingsView from './views/AdminSettingsView.vue'
 import AdminUsersView from './views/AdminUsersView.vue'
+import AccountView from './views/AccountView.vue'
 import { useAuth } from './composables/useAuth'
 import { apiClient } from './api/client'
 
@@ -66,6 +67,11 @@ const router = createRouter({
       meta: { admin: true },
     },
     {
+      path: '/account',
+      name: 'Account',
+      component: AccountView,
+    },
+    {
       path: '/login',
       name: 'Login',
       component: LoginView,
@@ -100,6 +106,12 @@ router.beforeEach(async (to) => {
 
   if (to.meta.admin && state.user.role !== 'admin') {
     return { name: 'Dashboard' }
+  }
+
+  // An administrator-issued password has to be replaced before the console is usable,
+  // otherwise the reset flag on the account would never mean anything.
+  if (state.user.mustChangePassword && to.name !== 'Account') {
+    return { name: 'Account' }
   }
 
   return true
