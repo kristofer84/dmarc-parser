@@ -2,14 +2,59 @@
 
 A full-stack application for automatically processing DMARC reports from email and providing a web-based dashboard for analysis.
 
+## 🚀 Deploy your own
+
+No build required - the image is published multi-arch (`amd64` + `arm64`, so a Raspberry Pi
+gets a native image):
+
+```bash
+cp .env.example .env      # ADMIN_EMAIL, ADMIN_PASSWORD, and the mailbox that gets reports
+docker compose -f compose.quickstart.yml up -d
+```
+
+Then open `http://localhost:8096` and sign in. Plain Docker works just as well:
+
+```bash
+docker run -d --name dmarc-parser -p 8096:8096 \
+  -e ADMIN_EMAIL=you@example.com -e ADMIN_PASSWORD='something-long' \
+  -v dmarc-data:/app/data ghcr.io/kristofer84/dmarc-parser:latest
+```
+
+One container serves the API *and* the web UI on one port: same origin, so there is no CORS
+to configure and no second service to keep in step. Published images carry build
+provenance:
+
+```bash
+gh attestation verify oci://ghcr.io/kristofer84/dmarc-parser:latest --repo kristofer84/dmarc-parser
+```
+
+| Variable | What it is |
+|---|---|
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | The first administrator, created only when the users table is empty. Without a password one is generated and printed to the log once. |
+| `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD` | The mailbox that receives `rua`/`ruf` reports. |
+| `COOKIE_SECURE` | `true` once TLS is in front of it, otherwise the session cookie is dropped over http. |
+| `PUBLIC_ORIGIN` | Only needed when a browser calls the API from a different origin than the UI. |
+| `DATABASE_URL` | Defaults to `file:/app/data/data.db`, inside the mounted volume. |
+
+All state is the SQLite database in that volume - back it up and you have everything.
+Before exposing it to the internet, put TLS in front and set `COOKIE_SECURE=true`;
+[deploy/README.md](deploy/README.md) is the runbook (nginx, certificate, hardened env).
+
+## Licence
+
+AGPL-3.0. Self-hosting it, modifying it and running it for your own organisation needs
+nothing from you. The one obligation is the AGPL's network clause: if you offer a *modified*
+version to other people over a network, you have to publish your source. A closed-source
+hosted fork is not permitted.
+
 ## 🚀 Features
 
 - **Automated Email Processing**: Fetches DMARC reports from IMAP email accounts
-- **XML Parsing**: Processes DMARC XML reports with validation
-- **REST API**: Provides endpoints for reports and summary statistics
-- **Interactive Dashboard**: Vue.js frontend with charts and analytics
-- **Report Management**: Sortable tables with filtering and pagination
-- **Real-time Updates**: Automatic processing with scheduling
+- **Aggregate (rua) reports**: XML parsing with validation, per-source-IP pass/fail breakdown
+- **Forensic (ruf) reports**: per-message authentication failures, including the failing message's headers when the reporter attaches it
+- **Multi-user with per-domain access**: administrators see everything, users see only the domains assigned to them
+- **Safe to expose**: session authentication, login rate limiting and lockout, scoped queries, audit trail
+- **Honest health**: reports `unhealthy` when ingestion is broken instead of answering 200 from a process that has not stored a report in days
 
 ## 🏗️ Architecture
 

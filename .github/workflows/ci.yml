@@ -1,0 +1,66 @@
+name: ci
+
+# Type checks and tests. This is the only thing that has to pass for a change to be
+# trusted - the image build is deliberately separate (publish.yml) so a slow multi-arch
+# build never blocks the feedback on a broken commit.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+  # Called by publish.yml, so an image can never be built from untested code.
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      # The generated client is gitignored, and tsc needs it.
+      - run: npx prisma generate
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      # The parser tests run against captured real reports, not the network.
+      - name: Tests
+        run: npm test
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Build
+        run: npm run build:docker

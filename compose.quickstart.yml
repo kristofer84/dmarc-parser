@@ -1,0 +1,56 @@
+# Quickstart: your own DMARC console in one container.
+#
+#   cp .env.example .env     # fill in ADMIN_EMAIL / ADMIN_PASSWORD
+#   docker compose -f compose.quickstart.yml up -d
+#   open http://localhost:8096
+#
+# Nothing is built here: this pulls the published multi-arch image (amd64 + arm64), which
+# serves the API and the web UI from the same port. Same origin means no CORS and no second
+# container. Fill in the IMAP_* variables below for the mailbox that receives the rua/ruf
+# reports - until they are set the container starts and serves the UI, but the ingestion
+# cycles have nothing to connect to.
+#
+# The other compose file in this repo (docker-compose.yml) is the two-container, built-from-
+# source variant that the maintainer's own instance runs behind nginx.
+
+services:
+  dmarc-parser:
+    # Pin a version for a reproducible deploy, e.g. ghcr.io/kristofer84/dmarc-parser:1.2.3
+    image: ghcr.io/kristofer84/dmarc-parser:latest
+    container_name: dmarc-parser
+    restart: unless-stopped
+    ports:
+      # Put a TLS terminator in front of this before exposing it to the internet, and see
+      # PUBLIC_ORIGIN / COOKIE_SECURE below.
+      - "${BIND_ADDRESS:-0.0.0.0}:8096:8096"
+    environment:
+      # Used only when the users table is empty. If ADMIN_PASSWORD is left out, a random one
+      # is generated and printed once to the container log.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+
+      # The mailbox that receives the rua/ruf reports. Required for ingestion; the container
+      # still starts and serves the UI without it.
+      IMAP_HOST: ${IMAP_HOST:-}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_USER: ${IMAP_USER:-}
+      IMAP_PASSWORD: ${IMAP_PASSWORD:-}
+
+      # Set to true when served over HTTPS, or the session cookie is dropped over http.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # The address you actually reach this on, e.g. https://dmarc.example.com. Only needed
+      # when a browser calls the API from a different origin than the UI.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+    volumes:
+      # The SQLite database - everything the app knows lives here. Back it up with:
+      #   docker run --rm -v dmarc-data:/data -v "$PWD":/backup alpine \
+      #     tar czf /backup/dmarc-data.tgz -C /data .
+      - dmarc-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  dmarc-data:
