@@ -1,4 +1,5 @@
 import { computed, reactive } from 'vue';
+import { startAuthentication } from '@simplewebauthn/browser';
 import { authApi } from '@/api/client';
 import type { AuthUser } from '@/types/api';
 
@@ -58,6 +59,36 @@ async function login(email: string, password: string): Promise<void> {
   state.initialised = true;
 }
 
+/**
+ * Sign in with a passkey. The verify call is what sets the session cookie, so the state here
+ * has to be written from its response for the SPA and the cookie to agree; there is no password
+ * to keep around and nothing else to send.
+ *
+ * A thrown error is left to the caller: whether the user simply dismissed the prompt is a
+ * presentation decision, not a session one. `initialised` is untouched so a cancelled attempt
+ * cannot leave the guards thinking the session was probed.
+ */
+async function loginWithPasskey(): Promise<void> {
+  const optionsJSON = await authApi.passkeyLoginOptions();
+  const credential = await startAuthentication({ optionsJSON });
+  const session = await authApi.passkeyLoginVerify(credential);
+  state.user = session.user;
+  state.domains = session.domains;
+  state.initialised = true;
+}
+
+/**
+ * Re-read the session from the server. Passkey changes - adding or removing one, dismissing the
+ * invitation - all move fields only the server knows (`passkeyCount`, `passkeyPromptDismissed`),
+ * so the cached user has to be replaced rather than patched.
+ */
+async function refreshSession(): Promise<void> {
+  const session = await authApi.me();
+  state.user = session.user;
+  state.domains = session.domains;
+  state.initialised = true;
+}
+
 async function logout(): Promise<void> {
   try {
     await authApi.logout();
@@ -75,11 +106,6 @@ function clearSession(): void {
   state.initialised = true;
 }
 
-/** A user with no domains assigned can still sign in, but sees no data. */
-function setDomains(domains: string[]): void {
-  state.domains = domains;
-}
-
 export function useAuth() {
   return {
     state,
@@ -87,8 +113,9 @@ export function useAuth() {
     isAdmin: computed(() => state.user?.role === 'admin'),
     fetchSession,
     login,
+    loginWithPasskey,
+    refreshSession,
     logout,
     clearSession,
-    setDomains,
   };
 }

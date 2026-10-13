@@ -122,6 +122,9 @@ export interface AuthUser {
   name: string | null;
   role: 'admin' | 'user';
   mustChangePassword: boolean;
+  passkeyCount: number;
+  /** Sticky on the server, so the invitation to add a passkey is asked at most once. */
+  passkeyPromptDismissed: boolean;
 }
 
 export interface SessionInfo {
@@ -132,6 +135,18 @@ export interface SessionInfo {
 export interface SessionPolicy {
   registrationOpen: boolean;
   sessionHours: number;
+  /** False when the deployment has WebAuthn switched off: no passkey UI anywhere. */
+  passkeysEnabled: boolean;
+}
+
+/** One registered credential, as the server describes it back to us. */
+export interface PasskeySummary {
+  id: string;
+  label: string | null;
+  deviceType: 'singleDevice' | 'multiDevice' | null;
+  backedUp: boolean;
+  createdAt: string;
+  lastUsedAt: string | null;
 }
 
 // ---------------------------------------------------------------- forensic (RUF)

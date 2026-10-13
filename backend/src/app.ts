@@ -12,6 +12,7 @@ import authRouter from './routes/auth.js';
 import brandingRouter from './routes/branding.js';
 import usersRouter from './routes/users.js';
 import settingsRouter from './routes/settings.js';
+import webauthnRouter from './routes/webauthn.js';
 import { attachUser, type AuthenticatedRequest } from './middleware/auth.js';
 import { evaluateProcessingHealth, getProcessingStatus } from './services/processingStatus.js';
 
@@ -149,6 +150,9 @@ export function createApp(): express.Application {
 
   // API routes
   app.use('/api/auth', authRouter);
+  // Passkeys live under /api/auth/webauthn so that everything which signs someone in is in
+  // one place in the route table; the router itself is in routes/webauthn.ts.
+  app.use('/api/auth/webauthn', webauthnRouter);
   // Public on purpose (instance name + accent for the sign-in screen); see routes/branding.ts.
   app.use('/api/branding', brandingRouter);
   app.use('/api/reports', reportsRouter);

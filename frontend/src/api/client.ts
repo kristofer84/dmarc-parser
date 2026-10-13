@@ -1,5 +1,11 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import type {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/browser';
+import type {
   ReportSummary,
   DetailedReport,
   DashboardStats,
@@ -12,6 +18,7 @@ import type {
   ProcessingStatus,
   SessionInfo,
   SessionPolicy,
+  PasskeySummary,
   ForensicReportSummary,
   ForensicReportDetail,
   ForensicSummary,
@@ -194,6 +201,56 @@ class ApiClient {
     return response.data;
   }
 
+  // ------------------------------------------------------------------ passkeys (WebAuthn)
+  /**
+   * The options endpoints hand back @simplewebauthn/browser's own JSON wire format, and the
+   * verify endpoints take the response that library produced. Nothing here reshapes either
+   * side: the challenge, base64url encoding and the server's session binding all depend on the
+   * bytes being passed through as-is.
+   */
+  async passkeyRegisterOptions(): Promise<PublicKeyCredentialCreationOptionsJSON> {
+    const response = await this.client.post<PublicKeyCredentialCreationOptionsJSON>(
+      '/auth/webauthn/register/options'
+    );
+    return response.data;
+  }
+
+  async passkeyRegisterVerify(payload: RegistrationResponseJSON): Promise<PasskeySummary[]> {
+    const response = await this.client.post<{ credentials: PasskeySummary[] }>(
+      '/auth/webauthn/register/verify',
+      payload
+    );
+    return response.data.credentials;
+  }
+
+  async passkeyLoginOptions(): Promise<PublicKeyCredentialRequestOptionsJSON> {
+    const response = await this.client.post<PublicKeyCredentialRequestOptionsJSON>(
+      '/auth/webauthn/login/options'
+    );
+    return response.data;
+  }
+
+  /** Sets the session cookie exactly like a password login, so it returns the same shape. */
+  async passkeyLoginVerify(payload: AuthenticationResponseJSON): Promise<SessionInfo> {
+    const response = await this.client.post<SessionInfo>('/auth/webauthn/login/verify', payload);
+    return { user: response.data.user, domains: response.data.domains ?? [] };
+  }
+
+  async listPasskeys(): Promise<PasskeySummary[]> {
+    const response = await this.client.get<{ credentials: PasskeySummary[] }>(
+      '/auth/webauthn/credentials'
+    );
+    return response.data.credentials;
+  }
+
+  async removePasskey(id: string): Promise<void> {
+    await this.client.delete(`/auth/webauthn/credentials/${id}`);
+  }
+
+  async dismissPasskeyPrompt(): Promise<void> {
+    await this.client.post('/auth/webauthn/prompt-dismissed');
+  }
+
   // ------------------------------------------------------------------ forensic reports
   async getForensics(filters: ForensicFilters = {}): Promise<PaginatedResponse<ForensicReportSummary>> {
     const params: Record<string, string> = {};
@@ -344,6 +401,11 @@ class ApiClient {
     await this.client.delete(`/users/${id}`);
   }
 
+  /** The recovery path when a user loses their device: every credential, in one call. */
+  async removeUserPasskeys(id: string): Promise<void> {
+    await this.client.delete(`/users/${id}/passkeys`);
+  }
+
   // ------------------------------------------------------------------ branding
   /** Public on the backend: the login screen needs it before a session exists. */
   async getBranding(): Promise<Branding> {
@@ -393,6 +455,15 @@ export const authApi = {
     apiClient.changePassword(currentPassword, newPassword),
   register: (email: string, password: string, name?: string) => apiClient.register(email, password, name),
   sessionPolicy: () => apiClient.sessionPolicy(),
+  passkeyRegisterOptions: () => apiClient.passkeyRegisterOptions(),
+  passkeyRegisterVerify: (payload: RegistrationResponseJSON) =>
+    apiClient.passkeyRegisterVerify(payload),
+  passkeyLoginOptions: () => apiClient.passkeyLoginOptions(),
+  passkeyLoginVerify: (payload: AuthenticationResponseJSON) =>
+    apiClient.passkeyLoginVerify(payload),
+  listPasskeys: () => apiClient.listPasskeys(),
+  removePasskey: (id: string) => apiClient.removePasskey(id),
+  dismissPasskeyPrompt: () => apiClient.dismissPasskeyPrompt(),
 };
 
 export const forensicsApi = {
@@ -433,4 +504,5 @@ export const usersApi = {
   setDomains: (id: string, domains: string[]) => apiClient.setUserDomains(id, domains),
   resetPassword: (id: string, newPassword: string) => apiClient.resetUserPassword(id, newPassword),
   remove: (id: string) => apiClient.deleteUser(id),
+  removePasskeys: (id: string) => apiClient.removeUserPasskeys(id),
 };

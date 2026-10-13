@@ -22,6 +22,10 @@ export interface AuthUser {
   name: string | null;
   role: UserRole;
   mustChangePassword: boolean;
+  /** How many passkeys the account has; drives the "add a passkey" prompt. */
+  passkeyCount: number;
+  /** True once the account has said "not now" to that prompt, on any browser. */
+  passkeyPromptDismissed: boolean;
 }
 
 const SCRYPT_N = 16384;
@@ -103,12 +107,19 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/**
+ * The single place a user is shaped for the client. Every caller supplies at least the
+ * scalar columns; only the session and login lookups count credentials, so `_count` is
+ * optional and an absent count reads as zero (which is correct for a user just created).
+ */
 export function toAuthUser(user: {
   id: string;
   email: string;
   name: string | null;
   role: string;
   mustChangePassword: boolean;
+  passkeyPromptDismissedAt: Date | null;
+  _count?: { webauthnCredentials: number };
 }): AuthUser {
   return {
     id: user.id,
@@ -116,6 +127,8 @@ export function toAuthUser(user: {
     name: user.name,
     role: user.role === 'admin' ? 'admin' : 'user',
     mustChangePassword: user.mustChangePassword,
+    passkeyCount: user._count?.webauthnCredentials ?? 0,
+    passkeyPromptDismissed: user.passkeyPromptDismissedAt !== null,
   };
 }
 
@@ -154,7 +167,9 @@ export async function resolveSession(
 
   const session = await prisma.session.findUnique({
     where: { tokenHash: hashToken(token) },
-    include: { user: true },
+    // The credential count travels with every authenticated request: the client needs it
+    // to decide whether to keep offering "add a passkey", and it is a single subquery.
+    include: { user: { include: { _count: { select: { webauthnCredentials: true } } } } },
   });
 
   if (!session) {
@@ -202,7 +217,10 @@ export type LoginOutcome =
 
 export async function authenticate(email: string, password: string): Promise<LoginOutcome> {
   const normalized = email.trim().toLowerCase();
-  const user = await prisma.user.findUnique({ where: { email: normalized } });
+  const user = await prisma.user.findUnique({
+    where: { email: normalized },
+    include: { _count: { select: { webauthnCredentials: true } } },
+  });
 
   if (!user || !user.isActive) {
     return { ok: false, reason: 'invalid_credentials' };

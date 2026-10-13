@@ -9,6 +9,7 @@ import {
   toAuthUser,
   validatePasswordStrength,
 } from '../services/auth.js';
+import { removeAllCredentialsForUser } from '../services/webauthn.js';
 
 const router = express.Router();
 
@@ -26,7 +27,7 @@ function serializeUser(user: {
   lockedUntil: Date | null;
   createdAt: Date;
   domains?: { domain: string }[];
-  _count?: { sessions: number };
+  _count?: { sessions: number; webauthnCredentials?: number };
 }) {
   return {
     id: user.id,
@@ -40,6 +41,9 @@ function serializeUser(user: {
     createdAt: user.createdAt.toISOString(),
     domains: (user.domains ?? []).map((d) => d.domain),
     activeSessions: user._count?.sessions ?? 0,
+    // Shown next to the "remove passkeys" recovery button, so an administrator can tell
+    // whether the button would do anything at all.
+    passkeyCount: user._count?.webauthnCredentials ?? 0,
   };
 }
 
@@ -59,7 +63,12 @@ router.get('/', async (_req, res) => {
     orderBy: [{ role: 'asc' }, { email: 'asc' }],
     include: {
       domains: { orderBy: { domain: 'asc' } },
-      _count: { select: { sessions: { where: { expiresAt: { gt: new Date() } } } } },
+      _count: {
+        select: {
+          sessions: { where: { expiresAt: { gt: new Date() } } },
+          webauthnCredentials: true,
+        },
+      },
     },
   });
 
@@ -136,7 +145,10 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
 
   const withDomains = await prisma.user.findUnique({
     where: { id: created.id },
-    include: { domains: true, _count: { select: { sessions: true } } },
+    include: {
+      domains: true,
+      _count: { select: { sessions: true, webauthnCredentials: true } },
+    },
   });
 
   console.log(`👤 ${req.user!.email} created user ${created.email} (${created.role})`);
@@ -177,7 +189,10 @@ router.patch('/:id', async (req: AuthenticatedRequest, res) => {
       ...(typeof isActive === 'boolean' ? { isActive } : {}),
       ...(typeof mustChangePassword === 'boolean' ? { mustChangePassword } : {}),
     },
-    include: { domains: true, _count: { select: { sessions: true } } },
+    include: {
+      domains: true,
+      _count: { select: { sessions: true, webauthnCredentials: true } },
+    },
   });
 
   if (isActive === false) {
@@ -246,6 +261,24 @@ router.put('/:id/domains', async (req: AuthenticatedRequest, res) => {
 
   console.log(`👤 ${req.user!.email} set domains for ${target.email}: ${applied.join(', ') || '(none)'}`);
   return res.json({ domains: applied });
+});
+
+// DELETE /users/:id/passkeys - account recovery when a device is lost.
+//
+// Removing every credential does not touch the password, which is what makes this safe to
+// offer: the account falls back to the password it already has, and an administrator who
+// fired this by mistake has cost the user nothing but a re-registration.
+router.delete('/:id/passkeys', async (req: AuthenticatedRequest, res) => {
+  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+
+  if (!target) {
+    return sendError(res, 404, 'NOT_FOUND', 'User not found');
+  }
+
+  const removed = await removeAllCredentialsForUser(target.id);
+
+  console.log(`🔑 ${req.user!.email} removed ${removed} passkey(s) from ${target.email}`);
+  return res.json({ removed });
 });
 
 // DELETE /users/:id

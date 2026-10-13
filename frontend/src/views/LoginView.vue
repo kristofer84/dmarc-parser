@@ -44,11 +44,32 @@
           <button
             type="submit"
             class="btn w-full justify-center bg-accent text-accent-foreground hover:bg-accent/90 focus:ring-accent"
-            :disabled="busy"
+            :disabled="busy || passkeyBusy"
           >
             <span v-if="busy">Signing in…</span>
             <span v-else>Sign in</span>
           </button>
+
+          <!--
+            Second, never first: an account without a passkey, a lost device or a browser
+            without WebAuthn all still have to get in, so the password form keeps its place and
+            the passkey button only appears when the server says it is switched on.
+          -->
+          <div v-if="policy?.passkeysEnabled" class="space-y-2 border-t border-gray-200 pt-4">
+            <button
+              type="button"
+              class="btn btn-secondary w-full justify-center"
+              :disabled="busy || passkeyBusy"
+              @click="submitPasskey"
+            >
+              <span v-if="passkeyBusy">Waiting for your device…</span>
+              <span v-else>Sign in with a passkey</span>
+            </button>
+            <p class="text-xs text-gray-500 text-center">
+              Uses the fingerprint, face or PIN of this device. Your password still works if you
+              have no passkey yet.
+            </p>
+          </div>
 
           <p v-if="policy?.registrationOpen" class="text-xs text-gray-500 text-center">
             Self-registration is enabled. New accounts see no domains until an administrator
@@ -67,16 +88,18 @@ import BrandMark from '@/components/BrandMark.vue';
 import { authApi } from '@/api/client';
 import { useAuth } from '@/composables/useAuth';
 import { useBranding } from '@/composables/useBranding';
+import { isPasskeyCancellation } from '@/composables/usePasskeys';
 import type { SessionPolicy } from '@/types/api';
 
 const route = useRoute();
 const router = useRouter();
-const { login } = useAuth();
+const { login, loginWithPasskey } = useAuth();
 const branding = useBranding();
 
 const email = ref('');
 const password = ref('');
 const busy = ref(false);
+const passkeyBusy = ref(false);
 const error = ref<string | null>(null);
 const policy = ref<SessionPolicy | null>(null);
 
@@ -88,18 +111,40 @@ onMounted(async () => {
   }
 });
 
+const goToRedirect = async () => {
+  const redirect = route.query.redirect;
+  await router.push(typeof redirect === 'string' && redirect ? redirect : { name: 'Dashboard' });
+};
+
 const submit = async () => {
   busy.value = true;
   error.value = null;
 
   try {
     await login(email.value, password.value);
-    const redirect = route.query.redirect;
-    await router.push(typeof redirect === 'string' && redirect ? redirect : { name: 'Dashboard' });
+    await goToRedirect();
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Sign in failed';
   } finally {
     busy.value = false;
+  }
+};
+
+const submitPasskey = async () => {
+  passkeyBusy.value = true;
+  error.value = null;
+
+  try {
+    await loginWithPasskey();
+    await goToRedirect();
+  } catch (err) {
+    // Dismissing the browser prompt is a choice, not a failure: dropping back to the form is
+    // the whole response, and "Sign in failed" would be a lie about something the user did.
+    if (!isPasskeyCancellation(err)) {
+      error.value = err instanceof Error ? err.message : 'Passkey sign-in failed';
+    }
+  } finally {
+    passkeyBusy.value = false;
   }
 };
 </script>

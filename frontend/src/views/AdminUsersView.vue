@@ -122,6 +122,11 @@
           <div class="flex items-center space-x-2">
             <button class="btn btn-secondary text-xs" @click="editDomains(item)">Domains</button>
             <button class="btn btn-secondary text-xs" @click="startPasswordReset(item)">Password</button>
+            <!-- The recovery path when a device is lost: the account survives and the user can
+                 register a fresh passkey after signing in again. -->
+            <button class="btn btn-secondary text-xs text-danger-700" @click="removePasskeys(item)">
+              Remove passkeys
+            </button>
             <button class="btn btn-secondary text-xs" @click="toggleActive(item)">
               {{ item.isActive ? 'Disable' : 'Enable' }}
             </button>
@@ -346,6 +351,25 @@ const removeUser = async (user: ManagedUser) => {
     await load();
   } catch (error) {
     setNotice(error instanceof Error ? error.message : 'Could not delete the user', true);
+  }
+};
+
+const removePasskeys = async (user: ManagedUser) => {
+  if (
+    !window.confirm(
+      `Remove every passkey for ${user.email}? They keep their password and can add a new ` +
+        'passkey once they are signed in again.'
+    )
+  ) {
+    return;
+  }
+
+  try {
+    await usersApi.removePasskeys(user.id);
+    setNotice(`Removed every passkey for ${user.email}`);
+    await load();
+  } catch (error) {
+    setNotice(error instanceof Error ? error.message : 'Could not remove the passkeys', true);
   }
 };
 

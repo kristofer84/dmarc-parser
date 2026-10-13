@@ -1,5 +1,4 @@
 import express from 'express';
-import type { Response } from 'express';
 import { rateLimit } from '../middleware/validation.js';
 import {
   requireAuth,
@@ -7,7 +6,6 @@ import {
   type AuthenticatedRequest,
 } from '../middleware/auth.js';
 import {
-  SESSION_COOKIE,
   authenticate,
   createSession,
   destroyAllSessionsForUser,
@@ -22,43 +20,10 @@ import {
 } from '../services/auth.js';
 import { prisma } from '../db/prisma.js';
 import { getBooleanSetting, getNumberSetting } from '../services/settings.js';
+import { resolveWebAuthnConfig } from '../services/webauthnConfig.js';
+import { clearSessionCookie, setSessionCookie } from '../services/sessionCookie.js';
 
 const router = express.Router();
-
-/** Behind nginx, so `secure` cookies must be judged from the forwarded protocol. */
-function isSecureRequest(req: express.Request): boolean {
-  if (req.secure) {
-    return true;
-  }
-  const forwarded = req.headers['x-forwarded-proto'];
-  const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return value === 'https';
-}
-
-function setSessionCookie(req: express.Request, res: Response, token: string, expiresAt: Date): void {
-  const maxAge = Math.max(expiresAt.getTime() - Date.now(), 0);
-  const attributes = [
-    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-    `Max-Age=${Math.floor(maxAge / 1000)}`,
-  ];
-
-  // Only mark Secure on real TLS, otherwise the plain-http dev setup could never log in.
-  if (process.env.COOKIE_SECURE === 'true' || isSecureRequest(req)) {
-    attributes.push('Secure');
-  }
-
-  res.append('Set-Cookie', attributes.join('; '));
-}
-
-function clearSessionCookie(res: Response): void {
-  res.append(
-    'Set-Cookie',
-    `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
-  );
-}
 
 // POST /auth/login
 router.post('/login', rateLimit(10, 60000), async (req: AuthenticatedRequest, res) => {
@@ -203,12 +168,16 @@ router.post('/register', rateLimit(5, 60000), async (req: AuthenticatedRequest, 
 
 // GET /auth/session-policy - what the login page needs to know before signing in
 router.get('/session-policy', async (_req, res) => {
-  const [registrationOpen, sessionHours] = await Promise.all([
+  const [registrationOpen, sessionHours, webauthn] = await Promise.all([
     getBooleanSetting('auth.registrationOpen'),
     getNumberSetting('auth.sessionHours'),
+    resolveWebAuthnConfig(),
   ]);
 
-  return res.json({ registrationOpen, sessionHours });
+  // Announced rather than probed: a deployment with no origin configured must tell the
+  // login page not to offer passkeys at all, instead of letting the user tap a button
+  // that can only fail.
+  return res.json({ registrationOpen, sessionHours, passkeysEnabled: webauthn.enabled });
 });
 
 export default router;

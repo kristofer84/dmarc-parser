@@ -133,23 +133,47 @@ model Setting {
 /// A console user. `role` is 'admin' (sees everything, manages users and settings)
 /// or 'user', which sees only the domains assigned in UserDomain.
 model User {
-  id                 String    @id @default(cuid())
-  email              String    @unique
-  name               String?
-  passwordHash       String
-  role               String    @default("user")
-  isActive           Boolean   @default(true)
-  mustChangePassword Boolean   @default(false)
-  failedLoginCount   Int       @default(0)
-  lockedUntil        DateTime?
-  lastLoginAt        DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                       String    @id @default(cuid())
+  email                    String    @unique
+  name                     String?
+  passwordHash             String
+  role                     String    @default("user")
+  isActive                 Boolean   @default(true)
+  mustChangePassword       Boolean   @default(false)
+  failedLoginCount         Int       @default(0)
+  lockedUntil              DateTime?
+  lastLoginAt              DateTime?
+  /// When this account said "not now" to the "add a passkey" prompt. Stored per account,
+  /// not per browser, so the prompt does not reappear when someone signs in elsewhere.
+  passkeyPromptDismissedAt DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
-  sessions           Session[]
-  domains            UserDomain[]
+  sessions            Session[]
+  domains             UserDomain[]
+  webauthnCredentials WebAuthnCredential[]
 
   @@map("users")
+}
+
+/// A passkey (WebAuthn credential) belonging to a user. Passwords remain the fallback, so a
+/// user with no rows here - or with every row cleared by an administrator - can still sign in.
+model WebAuthnCredential {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String    @unique   // base64url, as returned by the library
+  publicKey    String               // base64url
+  counter      Int       @default(0)
+  transports   String    @default("[]")  // JSON array (SQLite has no array column here)
+  label        String?              // what the user calls the device
+  deviceType   String?              // 'singleDevice' | 'multiDevice'
+  backedUp     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([userId])
+  @@map("webauthn_credentials")
 }
 
 /// Opaque server-side sessions. Only the SHA-256 of the cookie token is stored.
