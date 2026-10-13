@@ -92,14 +92,42 @@
     --color-gray-900: 241 245 249;
     --color-gray-950: 255 255 255;
 
-    /* The badge ramps are used as light chips with dark text, which stays legible on a dark
-       surface, so only the two shades that carry weight in dark mode are lifted. */
-    --color-success-100: 20 83 45;
-    --color-success-800: 187 247 208;
+    /* The semantic ramps are inverted too, and for two separate reasons that only became
+       visible when they were measured rather than eyeballed:
+         - 600-800 carry text (text-warning-700 on a card, the banner headings), so they have
+           to be light on a dark surface. At their light-theme values text-danger-700 sat at
+           2.58:1 and text-warning-700 at 3.32:1 - the second of which was reported.
+         - 50 and 100 are *backgrounds* (bg-warning-50 banners, bg-danger-100 chips). Leaving
+           the 50s as their light-theme creams while lightening the 800 text above them gave
+           light-on-light: 1.20:1, which is invisible rather than merely dim.
+       400 and 500 stay untouched: those are the solid bg-*-500 chips and status dots, which
+       read correctly on either surface and are not carrying small text. */
+    --color-warning-50: 48 32 10;
     --color-warning-100: 120 53 15;
+    --color-warning-200: 146 64 14;
+    --color-warning-300: 180 83 9;
+    --color-warning-600: 245 158 11;
+    --color-warning-700: 251 191 36;
     --color-warning-800: 253 230 138;
+
+    --color-danger-50: 60 22 22;
     --color-danger-100: 127 29 29;
+    --color-danger-200: 153 27 27;
+    --color-danger-300: 185 28 28;
+    --color-danger-600: 239 68 68;
+    --color-danger-700: 248 113 113;
     --color-danger-800: 254 202 202;
+
+    --color-success-50: 20 48 30;
+    --color-success-100: 20 83 45;
+    --color-success-200: 22 101 52;
+    --color-success-300: 21 128 61;
+    --color-success-600: 34 197 94;
+    --color-success-700: 74 222 128;
+    --color-success-800: 187 247 208;
+
+    /* primary is deliberately not inverted: bg-primary-600 is a button background with white
+       text, so lightening it would break the button rather than fix it. */
     --color-primary-100: 49 46 129;
     --color-primary-800: 199 210 254;
 
