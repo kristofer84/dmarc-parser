@@ -283,6 +283,20 @@ async function loginWithPassword(email: string): Promise<string> {
   return result.cookie!;
 }
 
+/**
+ * The verify body as @simplewebauthn/browser produces it: the credential response itself, with the
+ * ceremony id as a sibling when the client sends one - the mirror image of the options endpoints,
+ * which answer with `{ ...options, ceremonyId }`.
+ *
+ * This is the shape the SPA posts, and every test below must post it too. The tests used to post
+ * `{ ceremonyId, response: <credential> }`, which no browser or client ever sends; that wrapped
+ * shape happened to match the route's body parsing, so a suite of green tests covered up the fact
+ * that a real id-less registration could not be correlated at all.
+ */
+function verifyBody(response: unknown, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { ...(response as Record<string, unknown>), ...extra };
+}
+
 async function startRegistration(cookie: string) {
   const result = await call('POST', '/api/auth/webauthn/register/options', { cookie });
   assert.equal(result.status, 200, `register/options failed: ${JSON.stringify(result.body)}`);
@@ -470,15 +484,10 @@ await test('a real attestation verifies against the issued challenge and is stor
 
   const result = await call('POST', '/api/auth/webauthn/register/verify', {
     cookie: adminCookie,
-    body: {
+    body: verifyBody(registrationResponse({ challenge: options.challenge, credentialId, key }), {
       ceremonyId,
       label: 'Test laptop',
-      response: registrationResponse({
-        challenge: options.challenge,
-        credentialId,
-        key,
-      }),
-    },
+    }),
   });
 
   assert.equal(result.status, 201, JSON.stringify(result.body));
@@ -505,14 +514,9 @@ await test('registering the same credential twice is rejected as a conflict', as
 
   const result = await call('POST', '/api/auth/webauthn/register/verify', {
     cookie: adminCookie,
-    body: {
+    body: verifyBody(registrationResponse({ challenge: options.challenge, credentialId, key }), {
       ceremonyId,
-      response: registrationResponse({
-        challenge: options.challenge,
-        credentialId,
-        key,
-      }),
-    },
+    }),
   });
 
   assert.equal(result.status, 409);
@@ -526,14 +530,14 @@ await test('a registration response signed over a challenge we never issued is r
   const otherCredentialId = randomBytes(32);
   const result = await call('POST', '/api/auth/webauthn/register/verify', {
     cookie: adminCookie,
-    body: {
-      ceremonyId: randomBytes(24).toString('base64url'),
-      response: registrationResponse({
+    body: verifyBody(
+      registrationResponse({
         challenge: options.challenge,
         credentialId: otherCredentialId,
         key: newP256Key(),
       }),
-    },
+      { ceremonyId: randomBytes(24).toString('base64url') },
+    ),
   });
 
   assert.equal(result.status, 400);
@@ -605,18 +609,18 @@ await test('a real assertion signs in with the same session and counts as a cred
   const { ceremonyId, options } = await startLogin();
 
   const result = await call('POST', '/api/auth/webauthn/login/verify', {
-    body: {
-      ceremonyId,
-      // userVerified stays false: the options say 'preferred', so a security key that only
-      // proves presence must be accepted.
-      response: assertionResponse({
+    // userVerified stays false: the options say 'preferred', so a security key that only
+    // proves presence must be accepted.
+    body: verifyBody(
+      assertionResponse({
         challenge: options.challenge,
         credentialId,
         key,
         counter: 1,
         userHandle: Buffer.from(adminId, 'utf8').toString('base64url'),
       }),
-    },
+      { ceremonyId },
+    ),
   });
 
   assert.equal(result.status, 200, JSON.stringify(result.body));
@@ -640,15 +644,15 @@ await test('a challenge that was never issued is rejected', async () => {
   const { options } = await startLogin();
 
   const result = await call('POST', '/api/auth/webauthn/login/verify', {
-    body: {
-      ceremonyId: randomBytes(24).toString('base64url'),
-      response: assertionResponse({
+    body: verifyBody(
+      assertionResponse({
         challenge: options.challenge,
         credentialId,
         key,
         counter: 2,
       }),
-    },
+      { ceremonyId: randomBytes(24).toString('base64url') },
+    ),
   });
 
   assert.equal(result.status, 400);
@@ -664,10 +668,14 @@ await test('a challenge cannot be replayed a second time', async () => {
     counter: 2,
   });
 
-  const first = await call('POST', '/api/auth/webauthn/login/verify', { body: { ceremonyId, response } });
+  const first = await call('POST', '/api/auth/webauthn/login/verify', {
+    body: verifyBody(response, { ceremonyId }),
+  });
   assert.equal(first.status, 200, JSON.stringify(first.body));
 
-  const replay = await call('POST', '/api/auth/webauthn/login/verify', { body: { ceremonyId, response } });
+  const replay = await call('POST', '/api/auth/webauthn/login/verify', {
+    body: verifyBody(response, { ceremonyId }),
+  });
   assert.equal(replay.status, 400);
   assert.equal(replay.body.error.code, 'WEBAUTHN_CHALLENGE_INVALID');
 });
@@ -676,16 +684,16 @@ await test('a tampered signature fails verification', async () => {
   const { ceremonyId, options } = await startLogin();
 
   const result = await call('POST', '/api/auth/webauthn/login/verify', {
-    body: {
-      ceremonyId,
-      response: assertionResponse({
+    body: verifyBody(
+      assertionResponse({
         challenge: options.challenge,
         credentialId,
         key,
         counter: 3,
         tamperSignature: true,
       }),
-    },
+      { ceremonyId },
+    ),
   });
 
   assert.equal(result.status, 401);
@@ -702,15 +710,15 @@ await test('an assertion for a credential we never issued fails, and says nothin
   );
 
   const result = await call('POST', '/api/auth/webauthn/login/verify', {
-    body: {
-      ceremonyId,
-      response: assertionResponse({
+    body: verifyBody(
+      assertionResponse({
         challenge: options.challenge,
         credentialId: randomBytes(32),
         key: newP256Key(),
         counter: 1,
       }),
-    },
+      { ceremonyId },
+    ),
   });
 
   assert.equal(result.status, 401);
@@ -745,15 +753,15 @@ await test('a counter regression is rejected as a cloned authenticator', async (
   const { ceremonyId, options } = await startLogin();
 
   const result = await call('POST', '/api/auth/webauthn/login/verify', {
-    body: {
-      ceremonyId,
-      response: assertionResponse({
+    body: verifyBody(
+      assertionResponse({
         challenge: options.challenge,
         credentialId,
         key,
         counter: stored.counter,
       }),
-    },
+      { ceremonyId },
+    ),
   });
 
   assert.equal(result.status, 401);
@@ -775,11 +783,15 @@ await test('a client that does not echo the ceremony id is still bound to the ch
     counter: 3,
   });
 
-  const result = await call('POST', '/api/auth/webauthn/login/verify', { body: { response } });
+  const result = await call('POST', '/api/auth/webauthn/login/verify', {
+    body: verifyBody(response),
+  });
   assert.equal(result.status, 200, JSON.stringify(result.body));
 
   // ...and still single-use: the ceremony was consumed by that one call.
-  const replay = await call('POST', '/api/auth/webauthn/login/verify', { body: { response } });
+  const replay = await call('POST', '/api/auth/webauthn/login/verify', {
+    body: verifyBody(response),
+  });
   assert.equal(replay.status, 400);
   assert.equal(replay.body.error.code, 'WEBAUTHN_CHALLENGE_INVALID');
 
@@ -788,15 +800,15 @@ await test('a client that does not echo the ceremony id is still bound to the ch
   // what ties the response to the one we issued.
   const issued = await startLogin();
   const forged = await call('POST', '/api/auth/webauthn/login/verify', {
-    body: {
-      ceremonyId: issued.ceremonyId,
-      response: assertionResponse({
+    body: verifyBody(
+      assertionResponse({
         challenge: 'a-challenge-the-client-made-up',
         credentialId,
         key,
         counter: 4,
       }),
-    },
+      { ceremonyId: issued.ceremonyId },
+    ),
   });
   assert.equal(forged.status, 401);
   assert.equal(forged.body.error.code, 'WEBAUTHN_VERIFICATION_FAILED');
@@ -837,15 +849,14 @@ await test('a passkey sign-in still works while a failed-password lockout is act
   const { ceremonyId, options } = await startRegistration(clientCookie);
   const registration = await call('POST', '/api/auth/webauthn/register/verify', {
     cookie: clientCookie,
-    body: {
-      ceremonyId,
-      label: 'Client phone',
-      response: registrationResponse({
+    body: verifyBody(
+      registrationResponse({
         challenge: options.challenge,
         credentialId: clientCredentialId,
         key: clientKey,
       }),
-    },
+      { ceremonyId, label: 'Client phone' },
+    ),
   });
   assert.equal(registration.status, 201, JSON.stringify(registration.body));
 
@@ -855,13 +866,13 @@ await test('a passkey sign-in still works while a failed-password lockout is act
   const idlessStart = await startRegistration(clientCookie);
   const idless = await call('POST', '/api/auth/webauthn/register/verify', {
     cookie: clientCookie,
-    body: {
-      response: registrationResponse({
+    body: verifyBody(
+      registrationResponse({
         challenge: idlessStart.options.challenge,
         credentialId: idlessCredentialId,
         key: idlessKey,
       }),
-    },
+    ),
   });
   assert.equal(idless.status, 201, JSON.stringify(idless.body));
   assert.equal(idless.body.credentials.length, 2);
@@ -874,16 +885,16 @@ await test('a passkey sign-in still works while a failed-password lockout is act
 
   const login = await startLogin();
   const result = await call('POST', '/api/auth/webauthn/login/verify', {
-    body: {
-      ceremonyId: login.ceremonyId,
-      response: assertionResponse({
+    body: verifyBody(
+      assertionResponse({
         challenge: login.options.challenge,
         credentialId: clientCredentialId,
         key: clientKey,
         counter: 1,
         userHandle: Buffer.from(clientId, 'utf8').toString('base64url'),
       }),
-    },
+      { ceremonyId: login.ceremonyId },
+    ),
   });
 
   assert.equal(result.status, 200, JSON.stringify(result.body));
@@ -911,6 +922,100 @@ await test('an administrator cannot clear passkeys for a user that does not exis
     cookie: adminCookie,
   });
   assert.equal(result.status, 404);
+});
+
+// ---------------------------------------------------------------- the SPA's wire shape
+
+console.log("\nThe wire shape the SPA actually posts");
+
+// Shared by the tests below: one credential, registered over HTTP the way the browser does, then
+// used to sign in the same way.
+const spaKey = newP256Key();
+const spaCredentialId = randomBytes(32);
+
+await test('a registration response posted flat, with no ceremony id, verifies against the challenge it signed', async () => {
+  // The incident this guards: the verify body is the credential response itself - the library's
+  // own wire format, which is what the SPA posts - and the SPA never sends a ceremony id, so the
+  // challenge inside the signed clientDataJSON is the only thing that can correlate the attempt.
+  // A wrapped `{ response: <credential> }` body was the only shape that used to work, and no
+  // browser or client sends that; this test drives the real endpoints with the real shape.
+  const cookie = await loginWithPassword('admin@test.local');
+  const options = await call('POST', '/api/auth/webauthn/register/options', { cookie });
+  assert.equal(options.status, 200, JSON.stringify(options.body));
+
+  const posted = registrationResponse({
+    challenge: options.body.challenge,
+    credentialId: spaCredentialId,
+    key: spaKey,
+  });
+  // Exactly @simplewebauthn/browser's output: `response` is the authenticator data.
+  assert.equal(typeof posted.response.clientDataJSON, 'string');
+
+  const verified = await call('POST', '/api/auth/webauthn/register/verify', {
+    cookie,
+    body: posted,
+  });
+  assert.equal(verified.status, 201, JSON.stringify(verified.body));
+
+  const row = await prisma.webAuthnCredential.findUnique({
+    where: { credentialId: b64(spaCredentialId) },
+  });
+  assert.ok(row, 'the verified credential must be persisted');
+  assert.equal(row.id, verified.body.credentials[0].id);
+});
+
+await test('an assertion posted flat, with no ceremony id, signs in and mints a session', async () => {
+  const options = await call('POST', '/api/auth/webauthn/login/options', { body: {} });
+  assert.equal(options.status, 200);
+
+  const stored = await prisma.webAuthnCredential.findUnique({
+    where: { credentialId: b64(spaCredentialId) },
+  });
+  assert.ok(stored, 'the previous test registered this credential');
+
+  const result = await call('POST', '/api/auth/webauthn/login/verify', {
+    body: assertionResponse({
+      challenge: options.body.challenge,
+      credentialId: spaCredentialId,
+      key: spaKey,
+      counter: stored.counter + 1,
+      userHandle: Buffer.from(adminId, 'utf8').toString('base64url'),
+    }),
+  });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.ok(result.cookie, 'a passkey sign-in must issue a session cookie');
+
+  const me = await call('GET', '/api/auth/me', { cookie: result.cookie! });
+  assert.equal(me.status, 200);
+  assert.equal(me.body.user.id, adminId);
+});
+
+await test('a correlated but malformed attestation is answered, not thrown out of the process', async () => {
+  // The library throws instead of answering `verified: false` when the response is missing
+  // pieces it insists on, and a body correlated to a real ceremony with no credential id is
+  // enough to reach that. An async Express 4 handler does not catch a rejection, so this used
+  // to take the whole server down; it must be an ordinary failure.
+  const cookie = await loginWithPassword('admin@test.local');
+  const options = await call('POST', '/api/auth/webauthn/register/options', { cookie });
+  assert.equal(options.status, 200, JSON.stringify(options.body));
+
+  const malformed = await call('POST', '/api/auth/webauthn/register/verify', {
+    cookie,
+    body: {
+      response: {
+        // A genuine, issued challenge - so the ceremony is found - with nothing else.
+        clientDataJSON: b64(
+          Buffer.from(clientDataJSON('webauthn.create', options.body.challenge), 'utf8'),
+        ),
+      },
+    },
+  });
+  assert.equal(malformed.status, 400, JSON.stringify(malformed.body));
+  assert.equal(malformed.body.error.code, 'WEBAUTHN_VERIFICATION_FAILED');
+
+  // Still answering: the rejection did not become an unhandled one.
+  const live = await call('GET', '/health/live');
+  assert.equal(live.status, 200);
 });
 
 // ---------------------------------------------------------------- done

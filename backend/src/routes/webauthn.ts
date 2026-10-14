@@ -70,18 +70,39 @@ async function loadConfigOrReject(res: Response): Promise<WebAuthnConfig | null>
   return config;
 }
 
+/**
+ * The verify body is the credential response itself - the library's own flat
+ * RegistrationResponseJSON/AuthenticationResponseJSON, exactly as @simplewebauthn/browser hands
+ * it back - with the ceremony id, when the client sends one, as a sibling field. That mirrors
+ * the options endpoints, which answer with `{ ...options, ceremonyId }`.
+ *
+ * Nothing here unwraps a `response` field from the body: in this wire format `response` is the
+ * authenticator data, and lifting it out would leave readSignedChallenge() looking for the
+ * signed clientDataJSON one level too deep. That mistake made every ceremony id-less
+ * registration fail as "expired" while the challenge the browser signed was still sitting in
+ * the body, so the shape check below is on the element that is actually required.
+ */
 function readCeremonyParams(
   body: unknown,
 ): { ceremonyId: string | null; response: RegistrationResponseJSON | AuthenticationResponseJSON } | null {
-  const { ceremonyId, response } = (body ?? {}) as Record<string, unknown>;
-  if (typeof response !== 'object' || response === null) {
+  if (typeof body !== 'object' || body === null) {
     return null;
   }
-  // Optional on purpose: the browser helper hands the credential response straight back, and
-  // the challenge inside its signed clientDataJSON is what actually identifies the attempt.
+
+  const { ceremonyId, ...response } = body as Record<string, unknown>;
+  const authenticatorResponse = response.response;
+  if (typeof authenticatorResponse !== 'object' || authenticatorResponse === null) {
+    return null;
+  }
+  if (typeof (authenticatorResponse as { clientDataJSON?: unknown }).clientDataJSON !== 'string') {
+    return null;
+  }
+
+  // The ceremony id is optional on purpose: the challenge inside the signed clientDataJSON is
+  // what actually identifies the attempt.
   return {
     ceremonyId: typeof ceremonyId === 'string' && ceremonyId.length > 0 ? ceremonyId : null,
-    response: response as RegistrationResponseJSON,
+    response: response as unknown as RegistrationResponseJSON | AuthenticationResponseJSON,
   };
 }
 

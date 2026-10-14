@@ -4,6 +4,7 @@ import {
   generateRegistrationOptions,
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
+  type Uint8Array_,
   type VerifyAuthenticationResponseOpts,
   type VerifyRegistrationResponseOpts,
 } from '@simplewebauthn/server';
@@ -102,9 +103,16 @@ function consumeCeremony(ceremonyId: string, type: CeremonyType): Ceremony | nul
 function readSignedChallenge(
   response: RegistrationResponseJSON | AuthenticationResponseJSON,
 ): string | null {
+  // Checked rather than assumed: this is the one field the ceremony correlation depends on, and
+  // a body that reached verification without it must fail the correlation, not throw past it.
+  const clientDataJSON = response?.response?.clientDataJSON;
+  if (typeof clientDataJSON !== 'string') {
+    return null;
+  }
+
   try {
     const clientData = JSON.parse(
-      Buffer.from(response.response.clientDataJSON, 'base64url').toString('utf8'),
+      Buffer.from(clientDataJSON, 'base64url').toString('utf8'),
     ) as { challenge?: unknown };
     return typeof clientData.challenge === 'string' && clientData.challenge.length > 0
       ? clientData.challenge
@@ -170,8 +178,19 @@ function parseTransports(raw: string): Transport[] {
   }
 }
 
-/** How the account's id is handed to the authenticator: it must be bytes, as base64url. */
-function userHandleFor(userId: string): string {
+/**
+ * How the account's id is handed to the authenticator. The library has taken raw bytes for
+ * `userID` since v10 and rejects a string outright, and the bytes it sends to the browser
+ * come back base64url-encoded - hence the two forms below.
+ */
+function userHandleFor(userId: string): Uint8Array_ {
+  // A plain Uint8Array rather than the Buffer itself: the library's `userID` is typed as a
+  // view over a non-shared ArrayBuffer, which Buffer's SharedArrayBuffer-capable type is not.
+  return new Uint8Array(Buffer.from(userId, 'utf8'));
+}
+
+/** The same handle as it appears in an assertion response, for comparing identities. */
+function userHandleOnTheWire(userId: string): string {
   return Buffer.from(userId, 'utf8').toString('base64url');
 }
 
@@ -239,8 +258,9 @@ export async function startRegistration(
     // Excluded so an authenticator that already holds a passkey for this account says so
     // in the browser, instead of silently creating a second credential for the same key.
     excludeCredentials: existing.map((credential) => ({
-      id: Buffer.from(credential.credentialId, 'base64url'),
-      type: 'public-key' as const,
+      // Stored and offered in the same base64url form since v10; the descriptor is the
+      // library's own, so it no longer carries a `type`.
+      id: credential.credentialId,
       transports: parseTransports(credential.transports),
     })),
   });
@@ -285,18 +305,35 @@ export async function finishRegistration(
     };
   }
 
-  // Passing expectedOrigin and expectedRPID is what makes the browser's binding real: the
-  // library compares both against the value the authenticator signed over.
-  const verification = await verifyRegistrationResponse({
-    response: params.response,
-    expectedChallenge: ceremony.challenge,
-    expectedOrigin: config.origin,
-    expectedRPID: config.rpID,
-    // The options advertise userVerification: 'preferred', which means "ask for it, but do
-    // not reject a security key that only proves presence". Requiring it here would reject
-    // exactly those authenticators. Raise both together to 'required'/true to enforce it.
-    requireUserVerification: false,
-  });
+  let verification;
+  try {
+    // Passing expectedOrigin and expectedRPID is what makes the browser's binding real: the
+    // library compares both against the value the authenticator signed over.
+    verification = await verifyRegistrationResponse({
+      response: params.response,
+      expectedChallenge: ceremony.challenge,
+      expectedOrigin: config.origin,
+      expectedRPID: config.rpID,
+      // The options advertise userVerification: 'preferred', which means "ask for it, but do
+      // not reject a security key that only proves presence". Requiring it here would reject
+      // exactly those authenticators. Raise both together to 'required'/true to enforce it.
+      requireUserVerification: false,
+    });
+  } catch (error) {
+    // A malformed attestation makes the library throw rather than answer with
+    // `verified: false` - a body correlated to a real ceremony but missing its credential id
+    // is enough. Express 4 does not catch a rejected handler, so letting this out would take
+    // the whole process down; it is answered, and audited, like any other failure instead.
+    audit('registration rejected: verification error', {
+      user: params.userEmail,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      ok: false,
+      reason: 'invalid_response',
+      message: 'That passkey could not be verified',
+    };
+  }
 
   if (!verification.verified || !verification.registrationInfo) {
     audit('registration rejected: verification failed', { user: params.userEmail });
@@ -307,12 +344,12 @@ export async function finishRegistration(
     };
   }
 
-  const { credentialID, credentialPublicKey, counter, credentialDeviceType, credentialBackedUp } =
-    verification.registrationInfo;
-
-  // base64url in both directions, as the schema and the library both expect.
-  const credentialId = Buffer.from(credentialID).toString('base64url');
-  const publicKey = Buffer.from(credentialPublicKey).toString('base64url');
+  // v13+ nests the credential under `registrationInfo.credential` and reports its id
+  // already base64url-encoded, which is the form the column and the library both use.
+  const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
+  const credentialId = credential.id;
+  const publicKey = Buffer.from(credential.publicKey).toString('base64url');
+  const counter = credential.counter;
 
   const duplicate = await prisma.webAuthnCredential.findUnique({ where: { credentialId } });
   if (duplicate) {
@@ -444,7 +481,7 @@ export async function finishAuthentication(
 
   // A discoverable credential carries the account id it was created for. Mismatches mean
   // the client paired one account's credential id with another's handle.
-  if (params.response.response.userHandle && params.response.response.userHandle !== userHandleFor(stored.userId)) {
+  if (params.response.response.userHandle && params.response.response.userHandle !== userHandleOnTheWire(stored.userId)) {
     audit('login rejected: user handle mismatch', { user: stored.user.email });
     return { ok: false, reason: 'invalid_response', message: GENERIC_LOGIN_FAILURE };
   }
@@ -470,9 +507,11 @@ export async function finishAuthentication(
       expectedRPID: config.rpID,
       // Both non-zero counters must move forward; 0 means the authenticator does not
       // implement a counter, and the library applies the same exclusion.
-      authenticator: {
-        credentialID: Buffer.from(stored.credentialId, 'base64url'),
-        credentialPublicKey: Buffer.from(stored.publicKey, 'base64url'),
+      // v13+ renamed this option: the credential is the library's own `WebAuthnCredential`,
+      // whose id is base64url on the wire and whose public key is raw bytes.
+      credential: {
+        id: stored.credentialId,
+        publicKey: Buffer.from(stored.publicKey, 'base64url'),
         counter: stored.counter,
         transports: parseTransports(stored.transports),
       },

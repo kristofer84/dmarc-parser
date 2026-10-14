@@ -1,5 +1,5 @@
 # Multi-stage build for production
-FROM node:18-slim AS builder
+FROM node:24-slim AS builder
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # Production stage
-FROM node:18-slim AS production
+FROM node:24-slim AS production
 
 WORKDIR /app
 
@@ -54,6 +54,13 @@ RUN mkdir -p /app/data && chmod 777 /app/data
 
 # Expose port
 EXPOSE 8096
+
+# The image declares 8096 above and health-checks it below, so it has to actually listen there
+# when run on its own - `npm start` otherwise takes the development default (3000) and the
+# published port and healthcheck both point at nothing. Compose passes these explicitly, so this
+# only changes the standalone run.
+ENV NODE_ENV=production \
+    PORT=8096
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
