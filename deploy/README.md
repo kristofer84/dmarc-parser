@@ -107,3 +107,50 @@ certbot here; the vhost's port-80 block already returns 301.
   verdict and counters to anonymous callers, and the failure text only to a signed-in one.
 - A failed login is rate limited to 10/min per IP **per route**; dashboard polling no
   longer eats that budget (that was a bug this work fixed).
+
+## 5. Sign-in options
+
+Three ways in, all optional and additive: a password (always available), a passkey, and single
+sign-on through an OIDC provider. Passkeys and SSO are configured in the UI, so this section is
+about the parts that live outside it.
+
+### Passkeys
+
+Passkeys are bound to the **exact origin**: they work only on the hostname in `PUBLIC_ORIGIN`
+(here `https://dmarc.xcds.net`). Reached by IP, over plain http, or through a second hostname,
+they simply will not authenticate - and there is no useful error to show, because the browser
+refuses before any request is sent. Renaming the hostname invalidates every registered passkey.
+So settle the hostname before enrolling anything, and keep the password as the way in when a
+device is lost: an administrator can clear a user's passkeys from the Users screen.
+
+### Single sign-on (OIDC)
+
+The provider must know the callback URL before it will hand back an authorization code, and that
+is not friction to be worked around - it is what stops a code being delivered to someone else's
+URL. Add the provider under *More -> Identity providers*, then copy the callback the form shows -
+`https://<host>/api/auth/oidc/<provider id>/callback` - into the IdP. **Test connection** fetches
+the discovery document and prints the endpoints it resolved, so a wrong issuer fails there rather
+than at first login.
+
+Dynamic client registration (RFC 7591, where the app registers itself) would remove the manual
+step, but the IdPs that offer it want an initial access token first, and the common self-hosted
+ones do not offer it at all - so it is manual registration, deliberately.
+
+**For Google specifically:** issuer `https://accounts.google.com`, and in the Google Cloud
+console the client is a *Web application* with that callback under Authorized redirect URIs, plus
+the consent screen configured. Two consequences to know before starting:
+
+- While the consent screen is in **Testing**, only accounts you list as test users can sign in.
+  Publishing it needs no review for the `openid email profile` scopes.
+- Google sends **no groups claim**, so `adminGroup` cannot match and nobody is promoted
+  automatically: SSO users arrive as plain users with no domains, and you grant access afterwards.
+  (Keycloak and similar can map groups, and then `adminGroup` works.)
+
+Google does allow unregistered redirect URIs for *native* clients - `http://127.0.0.1:<port>`
+loopback - which is a desktop-app allowance and does not apply to a fixed hostname like this one.
+
+Rules the server enforces whatever the provider: only a **verified** email may link to an existing
+account (an unverified one is the account-takeover path, so it is refused); a provisioned user
+gets no domains unless the provider configures `defaultDomains`; and an SSO session is identical
+to a password login, so per-domain access and the audit trail are unchanged. With no provider
+configured, nothing about the login page changes.
