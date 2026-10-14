@@ -430,8 +430,6 @@ export interface ProviderConfig {
   clientSecretSet: boolean;
   scopes: string;
   allowAutoProvision: boolean;
-  adminGroup: string | null;
-  groupsClaim: string;
   defaultDomains: string[];
   createdAt: string;
   updatedAt: string;
@@ -446,8 +444,6 @@ export interface ProviderInput {
   scopes?: string;
   enabled?: boolean;
   allowAutoProvision?: boolean;
-  adminGroup?: string | null;
-  groupsClaim?: string;
   defaultDomains?: string[];
 }
 

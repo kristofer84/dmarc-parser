@@ -169,9 +169,6 @@ model AuthProvider {
   clientSecret       String
   scopes             String   @default("openid email profile")
   allowAutoProvision Boolean  @default(true)
-  /// Value in the configured groups claim that grants the admin role at provisioning time.
-  adminGroup         String?
-  groupsClaim        String   @default("groups")
   /// JSON array as text; assigned only to users this provider creates.
   defaultDomains     String   @default("[]")
   createdAt          DateTime @default(now())

@@ -518,18 +518,21 @@ await test('a provider with allowAutoProvision off rejects an unknown account', 
   }
 });
 
-await test('a configured adminGroup grants the administrator role at provisioning time', async () => {
-  await configureProvider({ adminGroup: 'dmarc-admins' });
-  try {
-    scenario({ email: 'oidc-admin@test.local', groups: ['other', 'dmarc-admins'] });
-    const callback = await hitCallback(await beginFlow());
-    assert.equal(callback.status, 302, JSON.stringify(callback.body));
+await test('a groups claim cannot grant administrator: SSO is identity-only', async () => {
+  // The stub emits this claim verbatim on the id_token, so the test proves the absence of any
+  // group-based promotion rather than assuming the token is clean. A provider that maps a group
+  // literally named "admin"/"admins" must not be able to hand out authority in this app.
+  scenario({ email: 'oidc-groups@test.local', groups: ['admin', 'admins', 'dmarc-admins'] });
+  const callback = await hitCallback(await beginFlow());
+  assert.equal(callback.status, 302, JSON.stringify(callback.body));
+  assert.equal(callback.location, '/');
 
-    const user = await prisma.user.findUnique({ where: { email: 'oidc-admin@test.local' } });
-    assert.equal(user?.role, 'admin');
-  } finally {
-    await configureProvider({ adminGroup: null });
-  }
+  const user = await prisma.user.findUnique({
+    where: { email: 'oidc-groups@test.local' },
+    include: { domains: true },
+  });
+  assert.equal(user?.role, 'user', 'no group claim may confer the administrator role');
+  assert.equal(user!.domains.length, 0, 'a provisioned SSO user gets no domains');
 });
 
 await test('defaultDomains are assigned to a provisioned user', async () => {

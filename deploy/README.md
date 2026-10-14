@@ -138,19 +138,27 @@ ones do not offer it at all - so it is manual registration, deliberately.
 
 **For Google specifically:** issuer `https://accounts.google.com`, and in the Google Cloud
 console the client is a *Web application* with that callback under Authorized redirect URIs, plus
-the consent screen configured. Two consequences to know before starting:
-
-- While the consent screen is in **Testing**, only accounts you list as test users can sign in.
-  Publishing it needs no review for the `openid email profile` scopes.
-- Google sends **no groups claim**, so `adminGroup` cannot match and nobody is promoted
-  automatically: SSO users arrive as plain users with no domains, and you grant access afterwards.
-  (Keycloak and similar can map groups, and then `adminGroup` works.)
+the consent screen configured. While the consent screen is in **Testing**, only accounts you list
+as test users can sign in; publishing it needs no review for the `openid email profile` scopes.
 
 Google does allow unregistered redirect URIs for *native* clients - `http://127.0.0.1:<port>`
 loopback - which is a desktop-app allowance and does not apply to a fixed hostname like this one.
 
+### Identity, not authority
+
+The IdP says *who* someone is; it never says what they may do. Only `sub`, `email` and
+`email_verified` (plus a display name) are read from the token, and no claim is consulted for
+authority - a token carrying any group, role or scope claim cannot make someone an administrator
+or widen their access. Roles and domain assignments live in this app's own database and are
+changed in the Users screen; the only other way in is the `ADMIN_EMAIL` / `ADMIN_PASSWORD`
+bootstrap in step 2.
+
+A user signed in through SSO therefore arrives as an ordinary user with **no domains**: they can
+sign in and see nothing until an administrator assigns domains. The provider's `defaultDomains`
+setting is the one convenience that pre-assigns domains to accounts the provider provisions - it
+is configuration in this app, not a claim in the token.
+
 Rules the server enforces whatever the provider: only a **verified** email may link to an existing
-account (an unverified one is the account-takeover path, so it is refused); a provisioned user
-gets no domains unless the provider configures `defaultDomains`; and an SSO session is identical
-to a password login, so per-domain access and the audit trail are unchanged. With no provider
-configured, nothing about the login page changes.
+account (an unverified one is the account-takeover path, so it is refused); and an SSO session is
+identical to a password login, so per-domain access and the audit trail are unchanged. With no
+provider configured, nothing about the login page changes.

@@ -199,45 +199,6 @@
 
             <div>
               <label
-                for="provider-groups-claim"
-                class="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Groups claim
-              </label>
-              <input
-                id="provider-groups-claim"
-                v-model="form.groupsClaim"
-                type="text"
-                placeholder="groups"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-              />
-              <p class="mt-1 text-xs text-gray-500">
-                Which token claim lists group membership. Leave blank for the server default.
-              </p>
-            </div>
-
-            <div>
-              <label
-                for="provider-admin-group"
-                class="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Admin group
-              </label>
-              <input
-                id="provider-admin-group"
-                v-model="form.adminGroup"
-                type="text"
-                placeholder="dmarc-admins"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-              />
-              <p class="mt-1 text-xs text-gray-500">
-                A group value in the claim above that grants administrator. Someone whose token
-                carries this group becomes an administrator on sign-in; leave blank for none.
-              </p>
-            </div>
-
-            <div>
-              <label
                 for="provider-default-domains"
                 class="block text-sm font-medium text-gray-700 mb-1"
               >
@@ -336,8 +297,6 @@ interface ProviderForm {
   clientId: string;
   clientSecret: string;
   scopes: string;
-  groupsClaim: string;
-  adminGroup: string;
   defaultDomains: string;
   enabled: boolean;
   allowAutoProvision: boolean;
@@ -349,8 +308,6 @@ const emptyForm = (): ProviderForm => ({
   clientId: '',
   clientSecret: '',
   scopes: '',
-  groupsClaim: '',
-  adminGroup: '',
   defaultDomains: '',
   enabled: true,
   allowAutoProvision: false,
@@ -418,10 +375,8 @@ const buildPayload = (): ProviderInput => ({
   ...(form.clientSecret ? { clientSecret: form.clientSecret } : {}),
   // Blank optional text is omitted rather than sent empty, so the server's own default applies.
   ...(form.scopes.trim() ? { scopes: form.scopes.trim() } : {}),
-  ...(form.groupsClaim.trim() ? { groupsClaim: form.groupsClaim.trim() } : {}),
   enabled: form.enabled,
   allowAutoProvision: form.allowAutoProvision,
-  adminGroup: form.adminGroup.trim() || null,
   defaultDomains: parseDomains(form.defaultDomains),
 });
 
@@ -460,8 +415,6 @@ const startEdit = (provider: ProviderConfig) => {
   // replacement.
   form.clientSecret = '';
   form.scopes = provider.scopes;
-  form.groupsClaim = provider.groupsClaim;
-  form.adminGroup = provider.adminGroup ?? '';
   form.defaultDomains = provider.defaultDomains.join(', ');
   form.enabled = provider.enabled;
   form.allowAutoProvision = provider.allowAutoProvision;

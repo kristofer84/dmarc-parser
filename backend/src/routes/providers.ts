@@ -33,17 +33,6 @@ function readString(value: unknown, field: string): string {
   return value.trim();
 }
 
-/** Empty (or absent) means "no value", which is how a cleared adminGroup is expressed. */
-function readOptionalString(value: unknown, field: string): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value !== 'string') {
-    throw validationError(`${field} must be a string`);
-  }
-  return value.trim().length > 0 ? value.trim() : null;
-}
-
 function readDomains(value: unknown): string {
   if (!Array.isArray(value)) {
     throw validationError('defaultDomains must be an array of domain names');
@@ -88,12 +77,6 @@ function readProviderBody(
 
   if (body.scopes !== undefined) {
     data.scopes = readString(body.scopes, 'scopes');
-  }
-  if (body.groupsClaim !== undefined) {
-    data.groupsClaim = readString(body.groupsClaim, 'groupsClaim');
-  }
-  if (body.adminGroup !== undefined) {
-    data.adminGroup = readOptionalString(body.adminGroup, 'adminGroup');
   }
   if (body.defaultDomains !== undefined) {
     data.defaultDomains = readDomains(body.defaultDomains);

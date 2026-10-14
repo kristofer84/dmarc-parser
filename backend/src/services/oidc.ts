@@ -12,7 +12,9 @@ import { hashPassword, toAuthUser, type AuthUser, type UserRole } from './auth.j
  * audit trail are identical by construction.
  *
  * The trust assumption, stated once: the configured identity provider is trusted to say who
- * a subject is. The one thing it is *not* trusted to do unattended is prove ownership of an
+ * a subject is. It is the source of identity and never of authority - no claim is consulted for
+ * a role or domain access, both of which this app decides in its own database and admin UI.
+ * The one thing the provider is *not* trusted to do unattended is prove ownership of an
  * email address - linking an external subject to an existing local account is an
  * account-takeover primitive unless the provider marks the email verified. So `email_verified`
  * (never the bare `email`) is what authorises a link.
@@ -42,8 +44,6 @@ export interface OidcProvider {
   clientSecret: string;
   scopes: string;
   allowAutoProvision: boolean;
-  adminGroup: string | null;
-  groupsClaim: string;
   defaultDomains: string;
 }
 
@@ -135,8 +135,6 @@ export function serializeProvider(provider: OidcProvider & { createdAt: Date; up
     clientSecretSet: provider.clientSecret.trim().length > 0,
     scopes: provider.scopes,
     allowAutoProvision: provider.allowAutoProvision,
-    adminGroup: provider.adminGroup,
-    groupsClaim: provider.groupsClaim,
     defaultDomains: parseDefaultDomains(provider.defaultDomains),
     createdAt: provider.createdAt.toISOString(),
     updatedAt: provider.updatedAt.toISOString(),
@@ -367,28 +365,9 @@ function takeCeremony(state: string | null, providerId: string): LoginCeremony |
   return ceremony;
 }
 
-/** The groups claim may be a single string or an array of them; anything else is ignored. */
-function readGroups(claims: client.IDToken, claimName: string): string[] {
-  const raw = claims[claimName];
-  if (typeof raw === 'string' && raw.length > 0) {
-    return [raw];
-  }
-  if (Array.isArray(raw)) {
-    return raw.filter((value): value is string => typeof value === 'string');
-  }
-  return [];
-}
-
 function readStringClaim(claims: client.IDToken, name: string): string | null {
   const raw = claims[name];
   return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
-}
-
-function grantedRole(groups: string[], adminGroup: string | null): UserRole {
-  if (!adminGroup) {
-    return 'user';
-  }
-  return groups.includes(adminGroup) ? 'admin' : 'user';
 }
 
 async function loadAuthUser(userId: string): Promise<AuthUser | null> {
@@ -459,7 +438,6 @@ export async function completeLogin(params: CompleteLoginParams): Promise<OidcLo
 
   const email = readStringClaim(claims, 'email')?.toLowerCase() ?? null;
   const emailVerified = claims.email_verified === true;
-  const groups = readGroups(claims, provider.groupsClaim);
 
   // 1. A subject we have seen before signs in; nothing else about the token can change that.
   const identity = await prisma.userIdentity.findUnique({
@@ -511,8 +489,8 @@ export async function completeLogin(params: CompleteLoginParams): Promise<OidcLo
     return { ok: false, reason: 'provisioning_disabled' };
   }
 
-  const role = grantedRole(groups, provider.adminGroup);
-
+  // Identity-only: whatever else the token carries, it never confers authority, so an account
+  // provisioned here starts as an ordinary user. Roles and domain access are granted in this app.
   // 3. A verified email matching an existing account links that account - the one moment the
   //    provider is trusted to speak for a local user.
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -550,13 +528,12 @@ export async function completeLogin(params: CompleteLoginParams): Promise<OidcLo
     if (!user) {
       return { ok: false, reason: 'token_invalid' };
     }
-    // Linking never changes the existing account's role: the groups claim decides the role at
-    // provisioning time only, so a renamed group cannot escalate an account that already exists.
+    // Linking confers no authority: the existing account's role and domains are left as they
+    // are, so no claim in the token can escalate an account that already exists.
     audit('login linked to existing account', {
       provider: provider.name,
       user: user.email,
       role: user.role,
-      claimRole: role,
     });
     return { ok: true, user, outcome: 'linked', role: user.role };
   }
@@ -573,7 +550,7 @@ export async function completeLogin(params: CompleteLoginParams): Promise<OidcLo
         // revealed keeps the column honest (and the account password-login-able only after an
         // administrator resets it) without inventing a nullable password.
         passwordHash: hashPassword(randomBytes(32).toString('base64url')),
-        role,
+        role: 'user',
         isActive: true,
       },
     });
