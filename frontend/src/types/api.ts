@@ -410,3 +410,55 @@ export interface DomainUpdateInput {
   notes?: string;
   monitored?: boolean;
 }
+
+// ---------------------------------------------------------------- identity providers (OIDC)
+/** The login screen's view: enabled providers only, and never a secret. */
+export interface AuthProviderSummary {
+  id: string;
+  name: string;
+  type: 'oidc';
+}
+
+export interface ProviderConfig {
+  id: string;
+  name: string;
+  type: 'oidc';
+  enabled: boolean;
+  issuer: string;
+  clientId: string;
+  /** The secret itself is never returned, only whether one is stored. */
+  clientSecretSet: boolean;
+  scopes: string;
+  allowAutoProvision: boolean;
+  adminGroup: string | null;
+  groupsClaim: string;
+  defaultDomains: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProviderInput {
+  name: string;
+  issuer: string;
+  clientId: string;
+  /** Omitted or blank on edit means "keep the stored secret". */
+  clientSecret?: string;
+  scopes?: string;
+  enabled?: boolean;
+  allowAutoProvision?: boolean;
+  adminGroup?: string | null;
+  groupsClaim?: string;
+  defaultDomains?: string[];
+}
+
+/** A refused test arrives as `ok: false` on a 200, so it is a result rather than an error. */
+export interface ProviderTestResult {
+  ok: boolean;
+  message: string;
+  endpoints?: {
+    issuer: string;
+    authorization_endpoint: string;
+    token_endpoint: string;
+    jwks_uri: string;
+  };
+}

@@ -152,8 +152,51 @@ model User {
   sessions            Session[]
   domains             UserDomain[]
   webauthnCredentials WebAuthnCredential[]
+  identities          UserIdentity[]
 
   @@map("users")
+}
+
+/// An external single-sign-on provider (OIDC). Passwords and passkeys stay the fallback:
+/// disabling or deleting a provider never removes an account, only one way into it.
+model AuthProvider {
+  id                 String   @id @default(cuid())
+  name               String
+  type               String   @default("oidc")
+  enabled            Boolean  @default(true)
+  issuer             String
+  clientId           String
+  clientSecret       String
+  scopes             String   @default("openid email profile")
+  allowAutoProvision Boolean  @default(true)
+  /// Value in the configured groups claim that grants the admin role at provisioning time.
+  adminGroup         String?
+  groupsClaim        String   @default("groups")
+  /// JSON array as text; assigned only to users this provider creates.
+  defaultDomains     String   @default("[]")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  identities         UserIdentity[]
+
+  @@map("auth_providers")
+}
+
+/// A user's account at an external provider. Kept separate from User so one account can be
+/// reachable through several providers later without another schema change.
+model UserIdentity {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerId  String
+  provider    AuthProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  subject     String
+  email       String?
+  createdAt   DateTime     @default(now())
+  lastLoginAt DateTime?
+
+  @@unique([providerId, subject])
+  @@index([userId])
+  @@map("user_identities")
 }
 
 /// A passkey (WebAuthn credential) belonging to a user. Passwords remain the fallback, so a

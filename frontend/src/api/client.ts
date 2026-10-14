@@ -25,6 +25,10 @@ import type {
   ForensicFilters,
   AppSetting,
   MailboxTestResult,
+  AuthProviderSummary,
+  ProviderConfig,
+  ProviderInput,
+  ProviderTestResult,
   ManagedUser,
   AvailableDomain,
   DomainSummary,
@@ -37,6 +41,14 @@ import type {
   RecordSuggestionOptions,
 } from '@/types/api';
 
+/**
+ * The API root, shared with the OIDC sign-in flow. That flow is a full page navigation rather
+ * than a request - the browser has to be pointed at the server that answers with a 302 and sets
+ * the session cookie - and in the dev setup that server is a different origin from the SPA, so
+ * the path cannot be hardcoded as `/api/...` here.
+ */
+export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+
 class ApiClient {
   private client: AxiosInstance;
   private unauthorizedHandler: (() => void) | null = null;
@@ -48,7 +60,7 @@ class ApiClient {
 
   constructor() {
     this.client = axios.create({
-      baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+      baseURL: apiBaseUrl,
       timeout: 10000,
       // The session cookie is the credential. Same-origin requests carry it anyway, but
       // the dev setup points VITE_API_BASE_URL at the host directly, which is cross-origin
@@ -199,6 +211,14 @@ class ApiClient {
   async sessionPolicy(): Promise<SessionPolicy> {
     const response = await this.client.get<SessionPolicy>('/auth/session-policy');
     return response.data;
+  }
+
+  /** Public: the login screen renders one button per enabled provider. */
+  async listAuthProviders(): Promise<AuthProviderSummary[]> {
+    const response = await this.client.get<{ providers: AuthProviderSummary[] }>(
+      '/auth/providers'
+    );
+    return response.data.providers ?? [];
   }
 
   // ------------------------------------------------------------------ passkeys (WebAuthn)
@@ -359,6 +379,43 @@ class ApiClient {
     return response.data;
   }
 
+  // ------------------------------------------------------------------ identity providers (OIDC)
+  async getProviders(): Promise<ProviderConfig[]> {
+    const response = await this.client.get<{ data: ProviderConfig[] }>('/providers');
+    return response.data.data;
+  }
+
+  async createProvider(payload: ProviderInput): Promise<ProviderConfig> {
+    const response = await this.client.post<{ provider: ProviderConfig }>('/providers', payload);
+    return response.data.provider;
+  }
+
+  async updateProvider(id: string, payload: Partial<ProviderInput>): Promise<ProviderConfig> {
+    const response = await this.client.patch<{ provider: ProviderConfig }>(
+      `/providers/${id}`,
+      payload
+    );
+    return response.data.provider;
+  }
+
+  async deleteProvider(id: string): Promise<void> {
+    await this.client.delete(`/providers/${id}`);
+  }
+
+  /**
+   * A provider that refuses to answer is reported as `ok: false` on a 200, so the body is the
+   * result in both cases - only a broken endpoint or a transport failure rejects. Discovery plus
+   * a JWKS fetch routinely outlives the client's 10s default.
+   */
+  async testProvider(id: string): Promise<ProviderTestResult> {
+    const response = await this.client.post<ProviderTestResult>(
+      `/providers/${id}/test`,
+      undefined,
+      { timeout: 30000 }
+    );
+    return response.data;
+  }
+
   async getUsers(): Promise<ManagedUser[]> {
     const response = await this.client.get<{ data: ManagedUser[] }>('/users');
     return response.data.data;
@@ -464,6 +521,15 @@ export const authApi = {
   listPasskeys: () => apiClient.listPasskeys(),
   removePasskey: (id: string) => apiClient.removePasskey(id),
   dismissPasskeyPrompt: () => apiClient.dismissPasskeyPrompt(),
+  listProviders: () => apiClient.listAuthProviders(),
+};
+
+export const providersApi = {
+  list: () => apiClient.getProviders(),
+  create: (payload: ProviderInput) => apiClient.createProvider(payload),
+  update: (id: string, payload: Partial<ProviderInput>) => apiClient.updateProvider(id, payload),
+  remove: (id: string) => apiClient.deleteProvider(id),
+  testProvider: (id: string) => apiClient.testProvider(id),
 };
 
 export const forensicsApi = {

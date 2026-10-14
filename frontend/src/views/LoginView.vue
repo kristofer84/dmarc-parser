@@ -9,8 +9,18 @@
 
       <form class="card" @submit.prevent="submit">
         <div class="card-body space-y-4">
-          <div v-if="error" class="rounded-md bg-danger-50 p-3">
+          <div v-if="error" class="rounded-md bg-danger-50 p-3 flex items-start justify-between gap-3">
             <p class="text-sm text-danger-700">{{ error }}</p>
+            <button
+              type="button"
+              class="-m-1 p-1 text-danger-700 hover:text-danger-800"
+              aria-label="Dismiss this message"
+              @click="error = null"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
 
           <div>
@@ -75,6 +85,26 @@
             Self-registration is enabled. New accounts see no domains until an administrator
             assigns them.
           </p>
+
+          <!--
+            Federated sign-in goes after the password form, never before it: the password is the
+            one route in that cannot depend on a third party's uptime or configuration. Nothing
+            at all is rendered when the server reports no enabled providers, so an instance with
+            no SSO looks exactly like it did before this existed.
+          -->
+          <div v-if="providers.length" class="space-y-2 border-t border-gray-200 pt-4">
+            <p class="text-xs text-gray-500 text-center">Or sign in with</p>
+            <button
+              v-for="provider in providers"
+              :key="provider.id"
+              type="button"
+              class="btn btn-secondary w-full justify-center"
+              :disabled="busy || passkeyBusy"
+              @click="startOidc(provider)"
+            >
+              Sign in with {{ provider.name }}
+            </button>
+          </div>
         </div>
       </form>
     </div>
@@ -85,11 +115,11 @@
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import BrandMark from '@/components/BrandMark.vue';
-import { authApi } from '@/api/client';
+import { apiBaseUrl, authApi } from '@/api/client';
 import { useAuth } from '@/composables/useAuth';
 import { useBranding } from '@/composables/useBranding';
 import { isPasskeyCancellation } from '@/composables/usePasskeys';
-import type { SessionPolicy } from '@/types/api';
+import type { AuthProviderSummary, SessionPolicy } from '@/types/api';
 
 const route = useRoute();
 const router = useRouter();
@@ -102,12 +132,60 @@ const busy = ref(false);
 const passkeyBusy = ref(false);
 const error = ref<string | null>(null);
 const policy = ref<SessionPolicy | null>(null);
+const providers = ref<AuthProviderSummary[]>([]);
+
+/**
+ * The OIDC callback redirects to /login?error=<code>, and a code in the address bar is not a
+ * sentence. Each one gets the plain-English cause and, where there is one, the way out. An
+ * unrecognised code still gets a sentence rather than the raw string - a literal `state_invalid`
+ * on screen tells the person reading it nothing.
+ */
+const SIGN_IN_ERRORS: Record<string, string> = {
+  state_invalid: 'That sign-in link expired or was already used. Try again.',
+  token_invalid: "That sign-in could not be verified. Try again, or use your password.",
+  email_unverified:
+    'Your provider has not verified this email address yet. Verify it there, then try again.',
+  provisioning_disabled:
+    'No account exists for this address, and this provider may not create one. Ask an administrator to set up an account.',
+  provider_disabled:
+    'This sign-in method has been turned off. Use your password, or ask an administrator.',
+  provider_not_found: 'This sign-in method no longer exists. Reload the page and try again.',
+};
+
+const SIGN_IN_ERROR_FALLBACK =
+  'Sign-in with that provider did not complete. Try again, or use your password.';
+
+/**
+ * A full page navigation, not a fetch: the endpoint answers 302 to the provider, and the flow
+ * ends at the callback where the server sets the session cookie. An XHR would follow the redirect
+ * itself, never leave the page, and hand the provider's HTML back as a response body.
+ */
+const startOidc = (provider: AuthProviderSummary) => {
+  window.location.assign(`${apiBaseUrl}/auth/oidc/${encodeURIComponent(provider.id)}/start`);
+};
 
 onMounted(async () => {
+  const code = route.query.error;
+  if (typeof code === 'string' && code) {
+    error.value = SIGN_IN_ERRORS[code] ?? SIGN_IN_ERROR_FALLBACK;
+    // Take it out of the URL, or a reload would resurrect a message about an attempt that is
+    // already over and there would be no way to dismiss it permanently.
+    const query = { ...route.query };
+    delete query.error;
+    void router.replace({ query });
+  }
+
   try {
     policy.value = await authApi.sessionPolicy();
   } catch {
     // The policy endpoint is a nicety; failing to read it must not block login.
+  }
+
+  try {
+    providers.value = await authApi.listProviders();
+  } catch {
+    // No SSO, or an endpoint that is not there: either way the login page offers nothing extra.
+    providers.value = [];
   }
 });
 

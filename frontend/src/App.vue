@@ -219,6 +219,7 @@ const moreNavLinks = computed<NavLink[]>(() => [
     ? [
         { label: 'Settings', to: '/admin/settings', activeFor: ['AdminSettings'] },
         { label: 'Users', to: '/admin/users', activeFor: ['AdminUsers'] },
+        { label: 'Identity providers', to: '/admin/providers', activeFor: ['AdminProviders'] },
       ]
     : []),
 ]);

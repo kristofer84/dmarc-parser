@@ -13,6 +13,8 @@ import brandingRouter from './routes/branding.js';
 import usersRouter from './routes/users.js';
 import settingsRouter from './routes/settings.js';
 import webauthnRouter from './routes/webauthn.js';
+import oidcRouter from './routes/oidc.js';
+import providersRouter from './routes/providers.js';
 import { attachUser, type AuthenticatedRequest } from './middleware/auth.js';
 import { evaluateProcessingHealth, getProcessingStatus } from './services/processingStatus.js';
 
@@ -153,6 +155,9 @@ export function createApp(): express.Application {
   // Passkeys live under /api/auth/webauthn so that everything which signs someone in is in
   // one place in the route table; the router itself is in routes/webauthn.ts.
   app.use('/api/auth/webauthn', webauthnRouter);
+  // OIDC sign-in routes (public) also live under /api/auth - /providers, /oidc/:id/start and
+  // /oidc/:id/callback - so everything that signs someone in shares one prefix.
+  app.use('/api/auth', oidcRouter);
   // Public on purpose (instance name + accent for the sign-in screen); see routes/branding.ts.
   app.use('/api/branding', brandingRouter);
   app.use('/api/reports', reportsRouter);
@@ -162,6 +167,8 @@ export function createApp(): express.Application {
   app.use('/api/domains', domainsRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/settings', settingsRouter);
+  // Administrator management of sign-in providers (the public half is under /api/auth).
+  app.use('/api/providers', providersRouter);
 
   // All-in-one image: serve the built SPA from the same origin. The port is then the only
   // thing a deployer needs to expose, and browser requests to /api are same-origin, so CORS
