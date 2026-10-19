@@ -255,7 +255,7 @@ docker compose -f compose.quickstart.yml up -d
 Bind mount: copy the backup over `data/data.db`, after saving the current file as
 `data/data.db.before-restore`, and remove any `-wal`/`-journal` sidecars.
 
-The app runs `npx prisma db push --accept-data-loss` on every start
+The app runs `npx prisma db push` on every start
 (`backend/src/db/prisma.ts`), so a backup from an older release is carried forward to the
 current schema automatically. The reverse does not work: an older image cannot read a
 schema written by a newer one, and `db push` will not roll it back. Restore an old backup

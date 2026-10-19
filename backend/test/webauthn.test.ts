@@ -317,7 +317,7 @@ try {
   // A throwaway database, created with the same `prisma db push` the container runs on
   // start, so the test exercises the real schema rather than a fixture.
   const prismaCli = join(backendDir, 'node_modules', 'prisma', 'build', 'index.js');
-  await promisify(execFile)(process.execPath, [prismaCli, 'db', 'push', '--skip-generate'], {
+  await promisify(execFile)(process.execPath, [prismaCli, 'db', 'push'], {
     cwd: backendDir,
     env: { ...process.env, DATABASE_URL: `file:${databaseFile}` },
   });

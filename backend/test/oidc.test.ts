@@ -324,7 +324,7 @@ try {
   stubBase = `http://127.0.0.1:${(stubServer.address() as AddressInfo).port}`;
 
   const prismaCli = join(backendDir, 'node_modules', 'prisma', 'build', 'index.js');
-  await promisify(execFile)(process.execPath, [prismaCli, 'db', 'push', '--skip-generate'], {
+  await promisify(execFile)(process.execPath, [prismaCli, 'db', 'push'], {
     cwd: backendDir,
     env: { ...process.env, DATABASE_URL: `file:${databaseFile}` },
   });
