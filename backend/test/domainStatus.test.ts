@@ -58,6 +58,15 @@ function fakeResolver(zone: Zone): DnsResolver {
 function fakeFetch(routes: Record<string, Route>): typeof fetch {
   const impl = async (input: string | URL | Request): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    // DNSSEC is the one check that asks DNS-over-HTTPS rather than the injected resolver, so
+    // the fake has to answer it too - and an empty answer (no DS, no DNSKEY) is the honest
+    // "this zone is not signed" case for every zone in these tests.
+    if (url.includes('cloudflare-dns.com') || url.includes('dns.google')) {
+      return new Response(JSON.stringify({ Status: 0, AD: false, Answer: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/dns-json' },
+      });
+    }
     const route = routes[url];
     if (!route) {
       return new Response('not found', { status: 404, headers: { 'content-type': 'text/plain' } });
@@ -642,7 +651,9 @@ await test('a resolver that fails every query still yields a full report', async
   });
 
   assert.equal(report.status, 'error');
-  assert.equal(report.results.length, 9);
+  // Nine checks answer from the resolver plus DNSSEC, which goes over DoH; a failing resolver
+  // must not cost the report any of them.
+  assert.equal(report.results.length, 10);
   assert.match(byId(report.results, 'spf').summary, /SERVFAIL/);
   assert.match(byId(report.results, 'dmarc').summary, /SERVFAIL/);
 });

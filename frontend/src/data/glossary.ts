@@ -1138,4 +1138,49 @@ export const GLOSSARY: GlossaryTerm[] = [
     reference: 'NIS2 Art. 21(2)(d)',
     related: ['sbom', 'build-provenance', 'nis2', 'audit-trail'],
   },
+  {
+    id: 'dnssec',
+    term: 'DNSSEC',
+    expansion: 'DNS Security Extensions',
+    aliases: ['RRSIG', 'signed zone', 'AD bit', 'validating resolver'],
+    category: 'dns',
+    short:
+      'Signatures on DNS answers, so a resolver can prove the answer it got is the one the zone published.',
+    detail:
+      'The zone signs its records (RRSIG), publishes the public keys (DNSKEY), and the parent zone carries a digest of one of those keys (DS). That DS is the link in the chain: it is published at the registrar, not at the DNS provider. A validating resolver checks the whole path and refuses to answer if it fails - so a broken chain does not degrade, it makes the domain unresolvable. The AD bit on an answer means the resolver performed that validation; this app passes it through rather than claiming to validate locally.',
+    whyItMatters:
+      'The domain check reports whether the zone is signed, which keys exist, and - computed, not assumed - whether the DS at the registrar matches one of them. A DS that matches no key is the classic DNSSEC outage: the zone still answers to non-validating resolvers, so it looks fine until someone with a validating resolver tries.',
+    reference: 'RFC 4033-4035',
+    related: ['ds-record', 'key-tag', 'dns-txt-record', 'domain-check'],
+  },
+  {
+    id: 'ds-record',
+    term: 'DS record',
+    expansion: 'Delegation Signer',
+    aliases: ['Delegation Signer', 'DS at the parent', 'registrar DS'],
+    category: 'dns',
+    short:
+      'A digest of one of the zone key-signing keys, published by the registrar in the parent zone.',
+    detail:
+      'DS lives in the parent (.net for xcds.net), which is why a DNS provider cannot publish it for you. It carries a key tag, an algorithm, a digest type (2 = SHA-256) and the digest itself: SHA-256 over the owner name in wire format plus the DNSKEY record. Two keys with identical material therefore have different DS digests under different domain names.',
+    whyItMatters:
+      'Enable DNSSEC at the DNS provider, then paste the DS the console prints into the registrar DNSSEC panel. During a key rollover, publish the new DS before removing the old one - a window with a DS that matches nothing is a window where the domain does not resolve for validators.',
+    reference: 'RFC 4034 §5',
+    related: ['dnssec', 'key-tag'],
+  },
+  {
+    id: 'key-tag',
+    term: 'Key tag',
+    expansion: null,
+    aliases: ['DS key tag', 'DNSKEY tag'],
+    category: 'dns',
+    short:
+      'A 16-bit checksum of a DNSKEY, so a DS can name a key without copying it.',
+    detail:
+      'Computed over the DNSKEY RDATA (RFC 4034 Appendix B), and stable as long as the key does not change. It is not a fingerprint and carries no security: two keys can collide, which is why the DS also carries the algorithm and the full digest. It exists so a resolver can quickly find which key a DS refers to.',
+    whyItMatters:
+      'It is the number quoted when comparing what the registrar holds with what the zone publishes - this app prints it next to each key, and the CLI prints the DS lines with the tag first.',
+    reference: 'RFC 4034 Appendix B',
+    related: ['dnssec', 'ds-record'],
+  },
 ];

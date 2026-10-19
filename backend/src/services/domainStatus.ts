@@ -1,4 +1,5 @@
 import { createPublicKey } from 'node:crypto';
+import { algorithmName, inspectDnssec } from './dnssec.js';
 import {
   resolve4,
   resolve6,
@@ -1442,6 +1443,126 @@ async function checkCaa(ctx: CheckContext): Promise<DomainCheckResult[]> {
   ];
 }
 
+async function checkDnssec(ctx: CheckContext): Promise<DomainCheckResult[]> {
+  const base = {
+    id: 'dnssec',
+    label: 'DNSSEC',
+    purpose:
+      'DNSSEC signs the zone so a validating resolver can prove an answer was not forged. The DS record at the parent (the registrar) is the link in the chain; a DS that matches no key in the zone takes the whole domain off the air for every validator.',
+  };
+
+  const inspection = await inspectDnssec(ctx.domain, {
+    fetchImpl: ctx.fetchImpl,
+    timeoutMs: ctx.timeoutMs,
+  });
+
+  if (!inspection.queried) {
+    return [
+      {
+        ...base,
+        status: 'skipped',
+        summary: `could not ask a validating resolver about DNSSEC: ${inspection.error ?? 'unknown error'}`,
+        fix:
+          'DS and DNSKEY cannot be requested through the system resolver, so this check uses DNS-over-HTTPS. Allow outbound HTTPS to cloudflare-dns.com or dns.google.',
+      },
+    ];
+  }
+
+  const keys = inspection.dnskey;
+  const details = [
+    `zone keys: ${keys.length}`,
+    ...keys.map(
+      (key) =>
+        `${key.isKeySigningKey ? 'KSK' : 'ZSK'} flags=${key.flags} ${algorithmName(key.algorithm)} key tag ${key.keyTag}`,
+    ),
+    ...(inspection.ds.length > 0
+      ? inspection.matches.map(
+          (match) =>
+            `DS ${match.ds.keyTag} ${match.ds.algorithm} ${match.ds.digestType} ${match.ds.digest} -> ${
+              match.key ? 'matches a key in the zone' : 'matches NO key in the zone'
+            }`,
+        )
+      : ['DS at parent: none']),
+    `resolver validated the answer (AD): ${inspection.authenticated ? 'yes' : 'no'}`,
+    ...(inspection.cds.length > 0 ? ['CDS published by the zone (RFC 8078)'] : []),
+  ];
+
+  if (inspection.ds.length === 0 && keys.length === 0) {
+    return [
+      {
+        ...base,
+        status: 'info',
+        summary: 'the zone is not signed and no DS is published',
+        details,
+        fix:
+          'Optional but recommended: enable DNSSEC at the DNS provider, then publish the DS record it computes at the registrar (Settings -> DNS, or Loopia -> domain -> DNSSEC). The record generator on this page prints the exact DS values.',
+      },
+    ];
+  }
+
+  if (inspection.ds.length === 0) {
+    return [
+      {
+        ...base,
+        status: 'warn',
+        summary: `the zone is signed (${keys.length} key(s)) but no DS is published, so there is no chain of trust`,
+        details,
+        fix:
+          'Publish the DS record for the key-signing key at the registrar. Until then a validator treats the domain as unsigned - the signature exists but nothing vouches for it.',
+      },
+    ];
+  }
+
+  const unmatched = inspection.matches.filter((match) => !match.key);
+  const matched = inspection.matches.filter((match) => match.key);
+
+  if (matched.length === 0) {
+    return [
+      {
+        ...base,
+        status: 'error',
+        summary:
+          'the DS at the registrar matches no key in the zone: validating resolvers will fail to resolve this domain',
+        details,
+        fix:
+          'Re-publish the DS record for the current key-signing key at the registrar. This is the classic DNSSEC outage: the registrar points at a key that no longer signs the zone.',
+      },
+    ];
+  }
+
+  if (!inspection.authenticated) {
+    return [
+      {
+        ...base,
+        status: 'warn',
+        summary: 'a DS exists and matches a key, but the resolver did not validate the chain',
+        details,
+        fix:
+          'Usually an expired or invalid RRSIG in the zone. Check the DNSSEC settings at the DNS provider; a validator rejecting the zone makes the domain unresolvable.',
+      },
+    ];
+  }
+
+  const summary = unmatched.length > 0
+    ? `signed; ${matched.length} DS record(s) match a key, ${unmatched.length} do not (stale DS during a rollover?)`
+    : `signed; the DS at the registrar matches key tag ${matched[0].ds.keyTag} (${algorithmName(matched[0].ds.algorithm)})`;
+
+  return [
+    {
+      ...base,
+      status: unmatched.length > 0 ? 'warn' : 'ok',
+      summary,
+      details,
+      ...(unmatched.length > 0
+        ? {
+            fix:
+              'Remove the DS records that no longer match a key once the new DS has been live long enough - a stale DS is harmless while another one matches, but it breaks the domain the moment the matching key is retired.',
+          }
+        : {}),
+    },
+  ];
+}
+
 const CHECKS: ReadonlyArray<{ id: string; label: string; optional: boolean; run: CheckRunner }> = [
   { id: 'mx', label: 'MX records', optional: false, run: checkMx },
   { id: 'spf', label: 'SPF record', optional: false, run: checkSpf },
@@ -1452,6 +1573,7 @@ const CHECKS: ReadonlyArray<{ id: string; label: string; optional: boolean; run:
   { id: 'bimi', label: 'BIMI', optional: true, run: checkBimi },
   { id: 'autodiscover', label: 'Mail client autodiscovery', optional: true, run: checkAutodiscover },
   { id: 'caa', label: 'CAA records', optional: true, run: checkCaa },
+  { id: 'dnssec', label: 'DNSSEC', optional: true, run: checkDnssec },
 ];
 
 function defaultResolver(): DnsResolver {

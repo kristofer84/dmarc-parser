@@ -339,7 +339,8 @@ export type GeneratedRecordId =
   | 'mta-sts'
   | 'tls-rpt'
   | 'caa'
-  | 'autodiscover';
+  | 'autodiscover'
+  | 'dnssec';
 
 /** `missing`/`outdated` are faults, `needs-input` is a question for the operator, `ok` is done. */
 export type GeneratedRecordStatus = 'missing' | 'ok' | 'outdated' | 'needs-input';
@@ -360,7 +361,7 @@ export interface GeneratedRecord {
   status: GeneratedRecordStatus;
   /** '@', '_dmarc', 'mailjet._domainkey', ... */
   host: string;
-  type: 'TXT' | 'CNAME' | 'A';
+  type: 'TXT' | 'CNAME' | 'A' | 'DS';
   value: string;
   ttl: number;
   /** The gotchas: lookup limits, propagation, provider caveats. */

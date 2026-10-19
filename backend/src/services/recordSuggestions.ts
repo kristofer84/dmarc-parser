@@ -12,6 +12,7 @@ import {
   type DnsResolver,
   type DomainCheckResult,
 } from './domainStatus.js';
+import { algorithmName, dsFromDnskey, inspectDnssec } from './dnssec.js';
 
 /**
  * Generates the DNS records a domain should publish, as copy-pasteable values.
@@ -35,8 +36,9 @@ export type GeneratedRecordId =
   | 'mta-sts'
   | 'tls-rpt'
   | 'caa'
-  | 'autodiscover';
-export type GeneratedRecordType = 'TXT' | 'CNAME' | 'A';
+  | 'autodiscover'
+  | 'dnssec';
+export type GeneratedRecordType = 'TXT' | 'CNAME' | 'A' | 'DS';
 export type DmarcPolicy = 'none' | 'quarantine' | 'reject';
 export type MtaStsMode = 'testing' | 'enforce';
 
@@ -133,6 +135,8 @@ export interface SuggestionInput {
   id?: string;
   /** Injectable for tests; defaults to node:dns/promises. */
   resolver?: DnsResolver;
+  /** Injectable for tests; defaults to global fetch. DNSSEC needs DNS-over-HTTPS. */
+  fetchImpl?: typeof fetch;
 }
 
 const TTL = 300;
@@ -153,6 +157,8 @@ const PURPOSE = {
   tlsRpt:
     'TLS-RPT asks receiving servers to report TLS failures and downgrades, so a delivery problem is visible before mail silently stops arriving.',
   caa: 'CAA names the certificate authorities allowed to issue certificates for the domain, so a certificate issued by anyone else can be refused automatically.',
+  dnssec:
+    'DNSSEC signs the zone so a validating resolver can prove an answer was not forged, and the DS record is the link that chains the domain to the parent zone. Without a DS the signature exists but nothing vouches for it.',
   autodiscover:
     'The autoconfig and autodiscover hostnames let a mail client find the IMAP and SMTP settings from just the address instead of being configured by hand.',
 } as const;
@@ -165,6 +171,7 @@ const PURPOSE_BY_ID: Record<GeneratedRecordId, string> = {
   'tls-rpt': PURPOSE.tlsRpt,
   caa: PURPOSE.caa,
   autodiscover: PURPOSE.autodiscover,
+  dnssec: PURPOSE.dnssec,
 };
 
 const DMARC_RANK: Record<DmarcPolicy, number> = { none: 0, quarantine: 1, reject: 2 };
@@ -815,6 +822,99 @@ function fallbackRecord(id: GeneratedRecordId, label: string, error: unknown): G
  * render the picker, and echoing back only what was requested left the builder unable to offer
  * anything it had not already been given - on a first visit, nothing at all.
  */
+/**
+ * DNSSEC is the one suggestion that is not a DNS record at the provider: the DS lives at the
+ * registrar, derived from a key in the zone. So this reads the zone's DNSKEYs (over DoH, the
+ * only way to ask) and prints the exact DS value to paste - the calculator someone otherwise
+ * does by hand with an SHA-256 of a hand-assembled record.
+ */
+async function generateDnssec(ctx: GenerationContext): Promise<GeneratedRecord[]> {
+  const base = {
+    id: 'dnssec' as const,
+    label: 'DNSSEC DS record',
+    purpose: PURPOSE.dnssec,
+    host: ctx.domain,
+    ttl: TTL,
+  };
+  const notes: string[] = [];
+
+  const inspection = await inspectDnssec(ctx.domain, {
+    fetchImpl: ctx.input.fetchImpl,
+    timeoutMs: 5000,
+  });
+
+  if (!inspection.queried) {
+    return [
+      {
+        ...base,
+        status: 'needs-input',
+        type: 'DS',
+        value: '',
+        notes: [
+          `Could not reach a validating resolver to read the zone keys (${inspection.error ?? 'unknown error'}).`,
+          'DS and DNSKEY cannot be queried through the system resolver; this needs outbound HTTPS to cloudflare-dns.com or dns.google.',
+        ],
+      },
+    ];
+  }
+
+  const signingKeys = inspection.dnskey.filter((key) => key.isKeySigningKey);
+  const keys = signingKeys.length > 0 ? signingKeys : inspection.dnskey;
+
+  if (keys.length === 0) {
+    return [
+      {
+        ...base,
+        status: 'needs-input',
+        type: 'DS',
+        value: '',
+        notes: [
+          'The zone is not signed, so there is no key to derive a DS from.',
+          'Enable DNSSEC at the DNS provider first; it generates the key pair and starts signing. Then this shows the DS to publish at the registrar.',
+        ],
+      },
+    ];
+  }
+
+  if (keys.length > 1) {
+    notes.push(
+      `${keys.length} key-signing keys are published. During a rollover both DS records should be live at the registrar before the old key is retired.`,
+    );
+  }
+
+  return keys.map((key) => {
+    const ds = dsFromDnskey(ctx.domain, key);
+    const value = `${ds.keyTag} ${ds.algorithm} ${ds.digestType} ${ds.digest}`;
+    const live = inspection.ds.some(
+      (record) =>
+        record.keyTag === ds.keyTag &&
+        record.algorithm === ds.algorithm &&
+        record.digestType === ds.digestType &&
+        record.digest === ds.digest,
+    );
+    const status: SuggestionStatus = live ? 'ok' : inspection.ds.length > 0 ? 'outdated' : 'missing';
+
+    return {
+      ...base,
+      status,
+      type: 'DS' as const,
+      value,
+      notes: [
+        `Key tag ${ds.keyTag}, ${algorithmName(ds.algorithm)}, digest type ${ds.digestType} (SHA-256).`,
+        live
+          ? 'This exact DS is already published at the registrar.'
+          : 'Paste this into the registrar\'s DNSSEC/DS field (Loopia: domain -> DNSSEC). It cannot be published at the DNS provider - DS lives in the parent zone.',
+        ...(inspection.ds.length > 0 && !live
+          ? ['A different DS is live now. Publish this one before removing the old one, or validating resolvers will fail until the change propagates.']
+          : []),
+        ...(!inspection.authenticated && live
+          ? ['The resolver did not validate the chain (AD=false), so the zone may have a signature problem even though the DS matches.']
+          : []),
+      ],
+    };
+  });
+}
+
 export async function generateRecords(
   input: SuggestionInput,
 ): Promise<{ records: GeneratedRecord[]; providers: SpfProvider[] }> {
@@ -839,6 +939,7 @@ export async function generateRecords(
     { id: 'tls-rpt', label: 'TLS-RPT report destination', run: async () => [await generateTlsRpt(ctx)] },
     { id: 'caa', label: 'CAA record', run: async () => [await generateCaa(ctx)] },
     { id: 'autodiscover', label: 'Autodiscovery hosts', run: async () => generateAutodiscover(ctx) },
+    { id: 'dnssec', label: 'DNSSEC DS records', run: async () => generateDnssec(ctx) },
   ];
 
   const records: GeneratedRecord[] = [];

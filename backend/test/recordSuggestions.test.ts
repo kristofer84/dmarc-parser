@@ -99,12 +99,27 @@ async function suggest(overrides: Partial<SuggestionInput> = {}): Promise<Genera
 }
 
 /** Generates against the same zone the stored check saw, so DNS and "current" agree. */
+/**
+ * DNSSEC reads the zone's keys over DNS-over-HTTPS, not through the injected resolver, so it
+ * gets an offline stub here. "No keys published" is the honest default for these fixtures.
+ */
+const dohStub = (async () =>
+  ({
+    ok: true,
+    json: async () => ({ Status: 0, AD: false, Answer: [] }),
+  }) as unknown as Response) as unknown as typeof fetch;
+
 async function suggestFor(
   zone: Zone,
   overrides: Partial<SuggestionInput> = {},
   selectors: string[] = [],
 ): Promise<GeneratedRecord[]> {
-  return suggest({ current: await currentFor(zone, selectors), resolver: fakeResolver(zone), ...overrides });
+  return suggest({
+    current: await currentFor(zone, selectors),
+    resolver: fakeResolver(zone),
+    fetchImpl: dohStub,
+    ...overrides,
+  });
 }
 
 function record(records: GeneratedRecord[], id: GeneratedRecord['id']): GeneratedRecord {
@@ -425,7 +440,7 @@ await test('every generated record carries a purpose, a status and notes', async
   );
   assert.deepEqual(
     [...new Set(records.map((entry) => entry.id))],
-    ['spf', 'dmarc', 'dkim', 'mta-sts', 'tls-rpt', 'caa', 'autodiscover'],
+    ['spf', 'dmarc', 'dkim', 'mta-sts', 'tls-rpt', 'caa', 'autodiscover', 'dnssec'],
   );
   for (const entry of records) {
     assert.ok(entry.purpose.length > 20, `${entry.id} needs a purpose`);

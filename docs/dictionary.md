@@ -490,6 +490,49 @@ check found a name absent.
 
 ---
 
+## DNSSEC
+
+### DNSSEC
+
+Signatures on DNS answers. The zone signs its RRsets (`RRSIG`), publishes the public keys
+(`DNSKEY`), and the parent zone carries a digest of one key (`DS`). A validating resolver walks
+that chain and refuses to answer if any link fails - which is why a DNSSEC mistake is an outage
+rather than a degradation. The `AD` bit on an answer means the resolver performed the
+validation; this app reports it rather than claiming to validate anything itself.
+
+Implementation: `backend/src/services/dnssec.ts`. Node's stub resolver cannot request `DS` or
+`DNSKEY` (and anything signed needs the DO bit), so the queries go over DNS-over-HTTPS -
+Cloudflare first, Google as fallback - and the module says so in its own docblock. Checks:
+`domainStatus.ts` (`checkDnssec`); CLI: `npm run dnssec <domain>`.
+
+Statuses that matter: signed with a matching DS is `ok`; signed with **no** DS is `warn` (the
+signature exists but nothing vouches for it); a DS that matches **no** key is `error`, because
+validating resolvers will fail on the whole domain.
+
+### DS record (Delegation Signer)
+
+Lives in the parent zone, so it is published by the **registrar**, not the DNS provider. Rdata:
+`<key tag> <algorithm> <digest type> <digest>`, where digest type 2 is SHA-256 over the owner
+name in wire format plus the DNSKEY rdata (RFC 4034 §5.1.4). Same key material under two domain
+names gives two different digests:
+
+```
+xcds.net     KSK 257 3 8 -> DS 12412 8 2 8fcc25df…
+kuverto.se   same key    -> DS 12412 8 2 51b764f3…
+```
+
+That pair is pinned in `backend/test/dnssec.test.ts`: it is what proves the digest covers the
+owner name and not just the key.
+
+### Key tag
+
+16-bit checksum of the DNSKEY rdata (RFC 4034 Appendix B), used so a DS can reference a key
+without copying it. Not a fingerprint and not a security property - the DS carries the algorithm
+and the full digest for that. The live `xcds.net` keys are pinned as vectors in the same test
+(KSK 12412, ZSK 26676).
+
+---
+
 ## Delivery and display
 
 ### Header From

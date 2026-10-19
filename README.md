@@ -69,6 +69,7 @@ hosted fork is not permitted.
 - **Data retention**: per-dataset policies for aggregate reports, forensic reports and the audit log, with a preview of exactly what a run would delete
 - **Safe to expose**: session authentication, login rate limiting and lockout, scoped queries
 - **Honest health**: reports `unhealthy` when ingestion is broken instead of answering 200 from a process that has not stored a report in days
+- **DNSSEC**: the domain check verifies the DS at the registrar against the keys in the zone (computing the digest, not trusting a tag), and the record generator prints the exact DS value to paste when enabling or rotating a key
 - **Glossary**: every term the reports and DNS checks use, explained in-app at `/glossary`
 
 ## 🏗️ Architecture
