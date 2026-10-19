@@ -27,7 +27,7 @@
     "mailparser": "^3.9.40",
     "node-imap": "^0.9.6",
     "openid-client": "^6.8.8",
-    "prisma": "^5.7.1",
+    "prisma": "^7.10.1",
     "xml2js": "^0.6.2",
     "yauzl": "^3.4.0"
   },
