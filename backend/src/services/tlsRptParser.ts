@@ -59,6 +59,22 @@ function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
+/**
+ * `mx-host` is a JSON array in RFC 8460 and every real report we have seen (Google sends
+ * ["mail.xcds.net"]). Reading it with `asString` silently stored "unknown" and put that in the
+ * dedup key, so this accepts either shape and joins a multi-host list.
+ */
+function asHostList(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    const hosts = value
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    return hosts.length > 0 ? hosts.join(',') : null;
+  }
+  return asString(value);
+}
+
 function asCount(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
@@ -178,7 +194,7 @@ export class TlsRptParser {
       const summary = (record.summary ?? {}) as Record<string, unknown>;
 
       const policyDomain = asString(policy['policy-domain']) ?? 'unknown';
-      const mxHost = asString(policy['mx-host']) ?? 'unknown';
+      const mxHost = asHostList(policy['mx-host']) ?? 'unknown';
       const policyString = Array.isArray(policy['policy-string'])
         ? JSON.stringify(policy['policy-string'].filter((line): line is string => typeof line === 'string'))
         : asString(policy['policy-string'])

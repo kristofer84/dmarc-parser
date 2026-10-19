@@ -37,7 +37,8 @@ const REPORT = {
         'policy-type': 'sts',
         'policy-string': ['version: STSv1', 'mode: testing', 'mx: mail.xcds.net'],
         'policy-domain': 'xcds.net',
-        'mx-host': 'mail.xcds.net',
+        // RFC 8460 shape, and what Google actually sends: an array, not a string.
+        'mx-host': ['mail.xcds.net'],
       },
       summary: {
         'total-successful-session-count': 412,
@@ -56,7 +57,7 @@ const REPORT = {
       policy: {
         'policy-type': 'sts',
         'policy-domain': 'kuverto.se',
-        'mx-host': 'mail.kuverto.se',
+        'mx-host': ['mail.kuverto.se', 'mx2.kuverto.se'],
       },
       summary: { 'total-successful-session-count': 88 },
     },
@@ -104,6 +105,8 @@ await test('parses one entry per policy, with counts and failure detail', () => 
   ]);
 
   assert.equal(second.policyDomain, 'kuverto.se');
+  // A multi-host policy keeps every host, so the row and its dedup key cover what was reported.
+  assert.equal(second.mxHost, 'mail.kuverto.se,mx2.kuverto.se');
   assert.equal(second.failureCount, 0);
   assert.deepEqual(second.failureDetails, []);
 });
@@ -123,6 +126,20 @@ await test('a report with no report-id still dedupes on its content', () => {
   const a = TlsRptParser.parse(Buffer.from(JSON.stringify(withoutId)), { filename: 'a.json' });
   const b = TlsRptParser.parse(Buffer.from(JSON.stringify(withoutId)), { filename: 'a.json' });
   assert.equal(a[0].dedupKey, b[0].dedupKey);
+});
+
+await test('an old-style string mx-host still parses', () => {
+  const legacy = {
+    ...REPORT,
+    policies: [
+      {
+        policy: { 'policy-domain': 'xcds.net', 'mx-host': 'mail.xcds.net' },
+        summary: { 'total-successful-session-count': 1 },
+      },
+    ],
+  };
+  const [entry] = TlsRptParser.parse(Buffer.from(JSON.stringify(legacy)), { filename: 'legacy.json' });
+  assert.equal(entry.mxHost, 'mail.xcds.net');
 });
 
 await test('refuses a report with no policies, naming the file', () => {
