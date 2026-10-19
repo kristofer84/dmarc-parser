@@ -1,6 +1,7 @@
 import Imap from 'node-imap';
 import { simpleParser, ParsedMail, Attachment } from 'mailparser';
 import { RufParser } from './rufParser.js';
+import { TlsRptParser } from './tlsRptParser.js';
 import { resolveMailboxConfig, type MailboxConfig } from './mailboxConfig.js';
 
 export interface EmailMessage {
@@ -19,8 +20,8 @@ export interface EmailAttachment {
   filename: string;
   contentType: string;
   content: Buffer;
-  /** Aggregate (rua) report unless marked otherwise. */
-  kind?: 'aggregate' | 'forensic';
+  /** Aggregate (rua) report unless marked otherwise. `unknown` is surfaced, never dropped. */
+  kind?: 'aggregate' | 'forensic' | 'tlsrpt' | 'unknown';
   /** For forensic reports: the message/rfc822 the failure is about, when attached. */
   reportedMessage?: Buffer | null;
 }
@@ -393,6 +394,19 @@ export class ImapClient {
           continue;
         }
 
+        // TLS-RPT (RFC 8460) is JSON or gzipped JSON, not XML: it can never be an aggregate
+        // report, and it must be recognised before the aggregate check or it is dropped.
+        if (TlsRptParser.looksLikeTlsRpt(filename, contentType, content)) {
+          console.log(`  🔐 Recognized as TLS-RPT report: ${filename}`);
+          attachments.push({
+            filename: filename,
+            contentType: contentType,
+            content: content,
+            kind: 'tlsrpt',
+          });
+          continue;
+        }
+
         if (this.isDmarcAttachment(attachment)) {
           console.log(`  ✅ Recognized as DMARC attachment: ${filename}`);
           
@@ -417,7 +431,16 @@ export class ImapClient {
             kind: 'aggregate',
           });
         } else {
-          console.log(`  ⏭️ Skipped attachment: ${filename} (not recognized as DMARC report)`);
+          // Not a report type this app understands - but it arrived at the reports mailbox, so
+          // it is surfaced in the processing log instead of being dropped into a console line
+          // nobody reads after the container is replaced.
+          console.log(`  ⏭️ Unrecognised attachment: ${filename} (${contentType})`);
+          attachments.push({
+            filename: filename,
+            contentType: contentType,
+            content: content,
+            kind: 'unknown',
+          });
         }
       }
     }

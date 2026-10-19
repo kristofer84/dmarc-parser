@@ -45,6 +45,9 @@ import type {
   AuditExport,
   RetentionPlan,
   RetentionRunResult,
+  TlsRptReport,
+  TlsRptSummary,
+  TlsRptFilters,
 } from '@/types/api';
 
 /**
@@ -529,6 +532,25 @@ class ApiClient {
     };
   }
 
+  // ------------------------------------------------------------------ TLS-RPT
+  async getTlsRptReports(
+    filters: TlsRptFilters = {}
+  ): Promise<PaginatedResponse<TlsRptReport>> {
+    const params: Record<string, string> = {};
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== null && value !== '') {
+        params[key] = String(value);
+      }
+    }
+    const response = await this.client.get<PaginatedResponse<TlsRptReport>>('/tlsrpt', { params });
+    return response.data;
+  }
+
+  async getTlsRptSummary(): Promise<TlsRptSummary> {
+    const response = await this.client.get<TlsRptSummary>('/tlsrpt/summary');
+    return response.data;
+  }
+
   // ------------------------------------------------------------------ retention
   async getRetention(): Promise<RetentionPlan> {
     const response = await this.client.get<RetentionPlan>('/settings/retention');
@@ -600,6 +622,11 @@ export const providersApi = {
   update: (id: string, payload: Partial<ProviderInput>) => apiClient.updateProvider(id, payload),
   remove: (id: string) => apiClient.deleteProvider(id),
   testProvider: (id: string) => apiClient.testProvider(id),
+};
+
+export const tlsRptApi = {
+  list: (filters?: TlsRptFilters) => apiClient.getTlsRptReports(filters),
+  summary: () => apiClient.getTlsRptSummary(),
 };
 
 export const forensicsApi = {

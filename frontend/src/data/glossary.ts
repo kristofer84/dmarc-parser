@@ -861,9 +861,9 @@ export const GLOSSARY: GlossaryTerm[] = [
     detail:
       'The record lives at _smtp._tls.<domain> and must start with v=TLSRPTv1 followed by at least one rua= address. Reports are JSON and describe failed sessions, which is what makes an MTA-STS rollout observable: without them, enforcing TLS and breaking mail look the same from your side. The reports go to a mailbox, not to any part of DMARC.',
     whyItMatters:
-      'The TLS-RPT check requires the version tag and a rua=, and reports absence as info. This app does not ingest TLS-RPT reports - there is no parser for them - so the record is the only part it can see.',
+      'The TLS-RPT check requires the version tag and a rua=, and reports absence as info. The reports themselves are ingested: TLS reports shows sessions that succeeded, sessions that failed and the reporter reason for each failure (certificate-expired, starttls-not-supported, ...). That page is the evidence for promoting MTA-STS from testing to enforce.',
     reference: 'RFC 8460',
-    related: ['mta-sts', 'dmarc-uri', 'dns-txt-record'],
+    related: ['mta-sts', 'dmarc-uri', 'dns-txt-record', 'audit-trail'],
   },
   {
     id: 'bimi',

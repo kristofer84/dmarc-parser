@@ -524,3 +524,50 @@ export interface RetentionRunResult {
   plan: RetentionPlan;
   deleted: Record<RetentionRuleKey, number>;
 }
+
+// ------------------------------------------------------------------ TLS-RPT (RFC 8460)
+
+export interface TlsRptFailureDetail {
+  resultType: string;
+  count: number;
+  sendingMtaIp?: string;
+  receivingMxHostname?: string;
+  failureReasonCode?: string;
+  additionalInformation?: string;
+}
+
+export interface TlsRptReport {
+  id: string;
+  reportId: string | null;
+  orgName: string | null;
+  contactInfo: string | null;
+  dateBegin: string;
+  dateEnd: string;
+  policyDomain: string;
+  policyType: string;
+  mxHost: string;
+  successfulCount: number;
+  failureCount: number;
+  failureDetails: TlsRptFailureDetail[];
+  /** The policy the reporter fetched, as published at report time. */
+  policyString: string[] | null;
+  createdAt: string;
+}
+
+export interface TlsRptSummary {
+  reports: number;
+  successful: number;
+  failed: number;
+  lastReportAt: string | null;
+  byDomain: Array<{ domain: string; successful: number; failed: number }>;
+  byResultType: Array<{ resultType: string; count: number }>;
+}
+
+export interface TlsRptFilters {
+  domain?: string;
+  failuresOnly?: boolean;
+  from?: string;
+  to?: string;
+  page?: number;
+  limit?: number;
+}

@@ -17,6 +17,7 @@ import AdminUsersView from './views/AdminUsersView.vue'
 import AdminProvidersView from './views/AdminProvidersView.vue'
 import GlossaryView from './views/GlossaryView.vue'
 import AdminAuditView from './views/AdminAuditView.vue'
+import TlsRptView from './views/TlsRptView.vue'
 import AccountView from './views/AccountView.vue'
 import { useAuth } from './composables/useAuth'
 import { brandingName } from './composables/useBranding'
@@ -100,6 +101,12 @@ const router = createRouter({
       name: 'AdminProviders',
       component: AdminProvidersView,
       meta: { admin: true, title: 'Identity providers' },
+    },
+    {
+      path: '/tls-reports',
+      name: 'TlsRpt',
+      component: TlsRptView,
+      meta: { title: 'TLS reports' },
     },
     {
       path: '/glossary',

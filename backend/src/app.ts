@@ -16,6 +16,7 @@ import webauthnRouter from './routes/webauthn.js';
 import oidcRouter from './routes/oidc.js';
 import providersRouter from './routes/providers.js';
 import auditRouter from './routes/audit.js';
+import tlsRptRouter from './routes/tlsRpt.js';
 import { attachUser, type AuthenticatedRequest } from './middleware/auth.js';
 import { auditRequests } from './middleware/audit.js';
 import { evaluateProcessingHealth, getProcessingStatus } from './services/processingStatus.js';
@@ -169,6 +170,8 @@ export function createApp(): express.Application {
   app.use('/api/summary', summaryRouter);
   app.use('/api/processing-logs', processingLogsRouter);
   app.use('/api/forensics', forensicsRouter);
+  // TLS-RPT (RFC 8460): SMTP TLS outcomes, read-only and domain-scoped.
+  app.use('/api/tlsrpt', tlsRptRouter);
   app.use('/api/domains', domainsRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/settings', settingsRouter);

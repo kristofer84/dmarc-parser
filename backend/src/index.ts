@@ -94,10 +94,10 @@ async function startServer() {
 
     const runRetentionIfDue = async () => {
       const result = await runRetention();
-      const { reports, forensics, audit } = result.deleted;
-      if (reports + forensics + audit > 0) {
+      const { reports, forensics, tlsrpt: tlsRpt, audit } = result.deleted;
+      if (reports + forensics + tlsRpt + audit > 0) {
         console.log(
-          `🧹 Retention: ${reports} report(s), ${forensics} forensic report(s), ${audit} audit row(s) removed`,
+          `🧹 Retention: ${reports} report(s), ${forensics} forensic, ${tlsRpt} TLS-RPT, ${audit} audit row(s) removed`,
         );
         await recordAudit({
           action: 'retention.run',
@@ -148,7 +148,7 @@ async function startServer() {
     try {
       const initialResult = await emailProcessor.processEmails();
       console.log(
-        `📊 Initial processing: ${initialResult.processed} aggregate, ${initialResult.forensic} forensic, ${initialResult.errors} errors, ${initialResult.skipped} skipped`,
+        `📊 Initial processing: ${initialResult.processed} aggregate, ${initialResult.forensic} forensic, ${initialResult.tlsRpt} TLS-RPT, ${initialResult.errors} errors, ${initialResult.skipped} skipped`,
       );
     } catch (error) {
       console.warn('⚠️ Initial email processing failed (this is normal if IMAP credentials are not configured):', error);

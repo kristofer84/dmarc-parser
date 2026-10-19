@@ -1,6 +1,7 @@
 import { ImapClient, EmailMessage, EmailAttachment } from './imapClient.js';
 import { DmarcParser } from './dmarcParser.js';
 import { RufParser } from './rufParser.js';
+import { TlsRptParser } from './tlsRptParser.js';
 import { prisma } from '../db/prisma.js';
 import { getBooleanSetting } from './settings.js';
 import { resolveMailboxConfig } from './mailboxConfig.js';
@@ -17,6 +18,7 @@ let warnedAboutMailbox = false;
 export interface ProcessingResult {
   processed: number;
   forensic: number;
+  tlsRpt: number;
   errors: number;
   skipped: number;
   details: Array<{
@@ -49,6 +51,7 @@ export class EmailProcessor {
     const result: ProcessingResult = {
       processed: 0,
       forensic: 0,
+      tlsRpt: 0,
       errors: 0,
       skipped: 0,
       details: [],
@@ -162,6 +165,7 @@ export class EmailProcessor {
     const result: ProcessingResult = {
       processed: 0,
       forensic: 0,
+      tlsRpt: 0,
       errors: 0,
       skipped: 0,
       details: [],
@@ -208,13 +212,19 @@ export class EmailProcessor {
 
     let hasSuccessfulAttachment = false;
 
-    // Process each attachment
+    // Process each attachment. The kind decides the parser, and an unrecognised kind is
+    // recorded rather than skipped in silence - "we received something we did not understand"
+    // is itself a report worth seeing.
     for (const attachment of message.attachments) {
       try {
         const attachmentResult =
           attachment.kind === 'forensic'
             ? await this.processForensicAttachment(attachment, message, result)
-            : await this.processAttachment(attachment, message, result);
+            : attachment.kind === 'tlsrpt'
+              ? await this.processTlsRptAttachment(attachment, message, result)
+              : attachment.kind === 'unknown'
+                ? await this.processUnknownAttachment(attachment, message, result)
+                : await this.processAttachment(attachment, message, result);
 
         if (attachmentResult === 'success' || attachmentResult === 'skipped') {
           hasSuccessfulAttachment = true;
@@ -330,6 +340,124 @@ export class EmailProcessor {
       });
       throw new Error(`Forensic report processing failed: ${errorMessage}`);
     }
+  }
+
+  /**
+   * TLS-RPT (RFC 8460): one row per policy entry, deduplicated by report-id + domain + MX.
+   * Unlike a DMARC report this is not about authentication - it is about whether SMTP TLS to
+   * the MX actually worked, which is the evidence for promoting MTA-STS to enforce.
+   */
+  private async processTlsRptAttachment(
+    attachment: EmailAttachment,
+    message: EmailMessage,
+    result: ProcessingResult,
+  ): Promise<'success' | 'skipped'> {
+    await this.createProcessingLog({
+      message,
+      attachment,
+      status: 'started',
+      details: `Processing TLS-RPT report ${attachment.filename}`,
+    });
+
+    try {
+      const entries = TlsRptParser.parse(attachment.content, {
+        fallbackDate: message.date ?? new Date(),
+        filename: attachment.filename,
+      });
+
+      let stored = 0;
+      let duplicates = 0;
+
+      for (const entry of entries) {
+        const existing = await prisma.tlsRptReport.findUnique({ where: { dedupKey: entry.dedupKey } });
+        if (existing) {
+          duplicates++;
+          continue;
+        }
+
+        await prisma.tlsRptReport.create({
+          data: {
+            dedupKey: entry.dedupKey,
+            reportId: entry.reportId,
+            orgName: entry.orgName,
+            contactInfo: entry.contactInfo,
+            dateBegin: entry.dateBegin,
+            dateEnd: entry.dateEnd,
+            policyDomain: entry.policyDomain,
+            policyType: entry.policyType,
+            mxHost: entry.mxHost,
+            successfulCount: entry.successfulCount,
+            failureCount: entry.failureCount,
+            failureDetails: JSON.stringify(entry.failureDetails),
+            policyString: entry.policyString,
+            raw: entry.raw,
+          },
+        });
+        stored++;
+      }
+
+      const failures = entries.reduce((sum, entry) => sum + entry.failureCount, 0);
+      console.log(
+        `✅ TLS-RPT ${attachment.filename}: ${stored} policy entr(ies) stored, ${duplicates} duplicate(s), ${failures} failed session(s)`,
+      );
+
+      await this.createProcessingLog({
+        message,
+        attachment,
+        status: stored > 0 ? 'success' : 'skipped',
+        details:
+          stored > 0
+            ? `Stored ${stored} TLS-RPT policy entr(ies)${failures > 0 ? `, ${failures} failed session(s)` : ''}`
+            : `TLS-RPT already stored (${duplicates} duplicate entr(ies))`,
+      });
+
+      if (stored > 0) {
+        result.tlsRpt++;
+      } else {
+        result.skipped++;
+      }
+      result.details.push({
+        status: stored > 0 ? 'success' : 'skipped',
+        message:
+          stored > 0
+            ? `Stored TLS-RPT report for ${entries.map((e) => e.policyDomain).join(', ')}`
+            : `TLS-RPT report already stored (${attachment.filename})`,
+      });
+      return stored > 0 ? 'success' : 'skipped';
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`❌ TLS-RPT processing failed: ${errorMessage}`);
+      await this.createProcessingLog({
+        message,
+        attachment,
+        status: 'error',
+        details: `TLS-RPT processing failed: ${errorMessage}`,
+      });
+      result.errors++;
+      result.details.push({
+        status: 'error',
+        message: `Failed to process TLS-RPT ${attachment.filename}: ${errorMessage}`,
+      });
+      throw new Error(`TLS-RPT processing failed: ${errorMessage}`);
+    }
+  }
+
+  /** Something arrived at the reports mailbox that this app does not parse. Surface it. */
+  private async processUnknownAttachment(
+    attachment: EmailAttachment,
+    message: EmailMessage,
+    result: ProcessingResult,
+  ): Promise<'skipped'> {
+    const details =
+      `Unrecognised attachment "${attachment.filename}" (${attachment.contentType}, ` +
+      `${attachment.content.length} bytes) - not stored, listed here so nothing arriving ` +
+      `at the reports mailbox is invisible`;
+
+    console.warn(`⚠️ ${details}`);
+    await this.createProcessingLog({ message, attachment, status: 'skipped', details });
+    result.skipped++;
+    result.details.push({ status: 'skipped', message: details });
+    return 'skipped';
   }
 
   private async processAttachment(

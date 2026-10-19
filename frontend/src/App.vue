@@ -215,6 +215,8 @@ const accountNavLink: NavLink = { label: 'Account', to: '/account', activeFor: [
 // shorter menu instead of a second hardcoded list.
 const moreNavLinks = computed<NavLink[]>(() => [
   { label: 'Processing Logs', to: '/processing-logs', activeFor: ['ProcessingLogs'] },
+  // SMTP TLS outcomes: a separate report type from DMARC, so it gets its own page.
+  { label: 'TLS reports', to: '/tls-reports', activeFor: ['TlsRpt'] },
   // The glossary is for everyone: it explains the vocabulary the reports and checks use.
   { label: 'Glossary', to: '/glossary', activeFor: ['Glossary'] },
   ...(isAdmin.value

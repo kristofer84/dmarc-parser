@@ -19,7 +19,7 @@ import { pruneAuditEvents } from './audit.js';
  * "deleted but still in the database" row would defeat the point of the policy.
  */
 
-export type RetentionRuleKey = 'reports' | 'forensics' | 'audit';
+export type RetentionRuleKey = 'reports' | 'forensics' | 'tlsrpt' | 'audit';
 
 export interface RetentionRuleView {
   key: RetentionRuleKey;
@@ -64,13 +64,14 @@ function forensicsWhere(cutoff: Date) {
   };
 }
 
-async function policy(): Promise<{ reports: number; forensics: number; audit: number }> {
-  const [reports, forensics, audit] = await Promise.all([
+async function policy(): Promise<{ reports: number; forensics: number; tlsrpt: number; audit: number }> {
+  const [reports, forensics, tlsrpt, audit] = await Promise.all([
     getNumberSetting('data.reportRetentionDays'),
     getNumberSetting('data.forensicRetentionDays'),
+    getNumberSetting('data.tlsRptRetentionDays'),
     getNumberSetting('data.auditRetentionDays'),
   ]);
-  return { reports, forensics, audit };
+  return { reports, forensics, tlsrpt, audit };
 }
 
 export async function previewRetention(): Promise<RetentionPlan> {
@@ -78,11 +79,13 @@ export async function previewRetention(): Promise<RetentionPlan> {
 
   const reportCutoff = cutoffFor(days.reports);
   const forensicCutoff = cutoffFor(days.forensics);
+  const tlsRptCutoff = cutoffFor(days.tlsrpt);
   const auditCutoff = cutoffFor(days.audit);
 
-  const [reports, forensics, audit] = await Promise.all([
+  const [reports, forensics, tlsrpt, audit] = await Promise.all([
     reportCutoff ? prisma.report.count({ where: reportsWhere(reportCutoff) }) : 0,
     forensicCutoff ? prisma.forensicReport.count({ where: forensicsWhere(forensicCutoff) }) : 0,
+    tlsRptCutoff ? prisma.tlsRptReport.count({ where: { createdAt: { lt: tlsRptCutoff } } }) : 0,
     auditCutoff ? prisma.auditEvent.count({ where: { createdAt: { lt: auditCutoff } } }) : 0,
   ]);
 
@@ -104,6 +107,13 @@ export async function previewRetention(): Promise<RetentionPlan> {
         pending: forensics,
       },
       {
+        key: 'tlsrpt',
+        setting: 'data.tlsRptRetentionDays',
+        retentionDays: days.tlsrpt,
+        cutoff: tlsRptCutoff?.toISOString() ?? null,
+        pending: tlsrpt,
+      },
+      {
         key: 'audit',
         setting: 'data.auditRetentionDays',
         retentionDays: days.audit,
@@ -116,7 +126,7 @@ export async function previewRetention(): Promise<RetentionPlan> {
 
 export interface RetentionRunResult {
   plan: RetentionPlan;
-  deleted: { reports: number; forensics: number; audit: number };
+  deleted: { reports: number; forensics: number; tlsrpt: number; audit: number };
 }
 
 /**
@@ -143,9 +153,10 @@ async function execute(): Promise<RetentionRunResult> {
 
   const reportCutoff = cutoff('reports');
   const forensicCutoff = cutoff('forensics');
+  const tlsRptCutoff = cutoff('tlsrpt');
   const auditCutoff = cutoff('audit');
 
-  const deleted = { reports: 0, forensics: 0, audit: 0 };
+  const deleted = { reports: 0, forensics: 0, tlsrpt: 0, audit: 0 };
 
   if (reportCutoff) {
     // Records are cascade-deleted with their report (schema.prisma), so one statement covers
@@ -160,6 +171,11 @@ async function execute(): Promise<RetentionRunResult> {
       where: forensicsWhere(forensicCutoff),
     });
     deleted.forensics = result.count;
+  }
+
+  if (tlsRptCutoff) {
+    const result = await prisma.tlsRptReport.deleteMany({ where: { createdAt: { lt: tlsRptCutoff } } });
+    deleted.tlsrpt = result.count;
   }
 
   if (auditCutoff) {

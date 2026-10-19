@@ -226,6 +226,18 @@ export const SETTINGS: SettingDefinition[] = [
     dangerous: true,
   },
   {
+    key: 'data.tlsRptRetentionDays',
+    type: 'number',
+    default: '365',
+    min: 0,
+    max: 3650,
+    label: 'Keep TLS-RPT reports for (days)',
+    description:
+      'SMTP TLS outcomes reported by senders. They are the evidence for MTA-STS enforcement, so they default to a year rather than forever: a year of failures is more than enough to answer the question. 0 keeps them forever.',
+    category: 'data',
+    dangerous: true,
+  },
+  {
     key: 'data.auditRetentionDays',
     type: 'number',
     default: '365',

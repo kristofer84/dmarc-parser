@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "test": "tsx test/rufParser.test.ts && tsx test/domainStatus.test.ts && tsx test/recordSuggestions.test.ts && tsx test/webauthn.test.ts && tsx test/oidc.test.ts",
+    "test": "tsx test/rufParser.test.ts && tsx test/tlsRptParser.test.ts && tsx test/domainStatus.test.ts && tsx test/recordSuggestions.test.ts && tsx test/webauthn.test.ts && tsx test/oidc.test.ts",
     "start": "node dist/index.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",

@@ -57,7 +57,8 @@ config file.
 | `auth_providers`, `user_identities` | Issuer, client id, **client secret in plaintext**, subject/email | Credential material | Until the provider is deleted |
 | `settings` | Branding, retention policy, **mailbox password in plaintext** when entered in the UI | Credential material | Until changed |
 | `audit_events` | Actor email, action, outcome, target, **IP**, user agent, redacted JSON detail | Behavioural data | `data.auditRetentionDays` (default: 365 days) |
-| `processing_logs` | Attachment names, status, error detail, message UID | Operational | Not pruned (small, and the evidence ingestion worked) |
+| `tls_rpt_reports` | Per-domain SMTP TLS outcomes reported by senders: successes, failures, failing sender IPs, and the reporter's reason code; optionally the policy as published at the time | Third-party IPs; evidence about your own MX | `data.tlsRptRetentionDays` (default 365 days) |
+| `processing_logs` | Attachment names, status, error detail, message UID; includes a row for any attachment the parsers did not recognise | Operational | Not pruned (small, and the evidence ingestion worked) |
 | `domains`, `domain_checks` | Domain names and DNS check results | Low | Until the domain is removed |
 
 Consequences worth stating plainly:
@@ -82,9 +83,10 @@ Consequences worth stating plainly:
    materials.
 3. **Backup and restore** — a snapshot verified with `PRAGMA integrity_check` and a completed
    restore drill (§8), not just a file that exists.
-4. **Ingestion is alive** — `/health` returns 503 and `unhealthy` when cycles stop completing;
+4. **TLS is measurable** — *TLS reports* shows SMTP TLS successes and failures per domain and MX, with the sender's reason for each failure. That is the input to an MTA-STS enforcement decision, and the first place to look when mail to your MX stops.
+5. **Ingestion is alive** — `/health` returns 503 and `unhealthy` when cycles stop completing;
    `processing.lastCompletedAt` is the timestamp an auditor can read.
-5. **Retention is applied** — *Settings → Data* previews exactly what a run would delete, per rule,
+6. **Retention is applied** — *Settings → Data* previews exactly what a run would delete, per rule,
    before anything is deleted.
 
 ## What this project does **not** do

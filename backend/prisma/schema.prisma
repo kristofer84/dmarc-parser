@@ -155,6 +155,37 @@ model AuditEvent {
   @@map("audit_events")
 }
 
+/// TLS-RPT (RFC 8460) aggregate report, one row per policy entry: a single report can cover
+/// several policy domains and MX hosts, and each carries its own success/failure counts.
+model TlsRptReport {
+  id              String   @id @default(cuid())
+  /// report-id + policy domain + MX host. A resend keeps the same key, so ingestion is idempotent.
+  dedupKey        String   @unique
+  reportId        String?
+  orgName         String?
+  contactInfo     String?
+  dateBegin       DateTime
+  dateEnd         DateTime
+  policyDomain    String
+  /// sts | tlsa | no-policy-found
+  policyType      String
+  mxHost          String
+  successfulCount Int      @default(0)
+  failureCount    Int      @default(0)
+  /// JSON array of failure-detail objects: result-type, failed count, sending MTA IP and
+  /// the reporter's reason code. This is the part that says *why* TLS failed.
+  failureDetails  String   @default("[]")
+  /// The policy the reporter fetched, as JSON array of lines - evidence of what was live then.
+  policyString    String?
+  /// Raw report JSON, size-capped. The record of what the reporter actually sent.
+  raw             String?
+  createdAt       DateTime @default(now())
+
+  @@index([policyDomain, dateEnd])
+  @@index([createdAt])
+  @@map("tls_rpt_reports")
+}
+
 /// Runtime application options, editable from the admin UI.
 model Setting {
   key       String   @id

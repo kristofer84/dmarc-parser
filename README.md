@@ -61,6 +61,8 @@ hosted fork is not permitted.
 - **Automated Email Processing**: Fetches DMARC reports from IMAP email accounts
 - **Aggregate (rua) reports**: XML parsing with validation, per-source-IP pass/fail breakdown
 - **Forensic (ruf) reports**: per-message authentication failures, including the failing message's headers when the reporter attaches it
+- **TLS-RPT reports**: SMTP TLS outcomes from senders (successes, failures and the reason for each failure), which is what tells you whether MTA-STS can be enforced
+- **Nothing arriving silently dropped**: an attachment the parsers do not understand is listed in the processing log rather than disappearing
 - **Multi-user with per-domain access**: administrators see everything, users see only the domains assigned to them
 - **Passkeys and SSO, without giving up passwords**: WebAuthn sign-in, plus OIDC as an identity-only third way in
 - **Persistent audit trail**: who changed what, from where, and whether it worked - with filters, CSV/JSON export and a SHA-256 digest over each export
