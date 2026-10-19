@@ -7,6 +7,8 @@ import { ensureSettingsSeeded, getBooleanSetting, getNumberSetting } from './ser
 import { ensureAdminUser } from './services/auth.js';
 import { runAllChecks, discoverDomains } from './services/domainMonitor.js';
 import { resolveMailboxConfig } from './services/mailboxConfig.js';
+import { runRetention } from './services/retention.js';
+import { recordAudit } from './services/audit.js';
 
 setupLogging();
 
@@ -84,6 +86,38 @@ async function startServer() {
     setInterval(() => {
       runDomainChecksIfDue().catch((error) => console.warn('⚠️ Scheduled domain check failed:', error));
     }, DOMAIN_TICK_MS).unref?.();
+
+    // Data retention. The policy is read on every tick, so changing a setting takes effect
+    // without a restart. Six-hourly rather than daily: the work is a few indexed deletes, and
+    // a missed window on a Pi that reboots is more likely than a run being too frequent.
+    const RETENTION_TICK_MS = 6 * 60 * 60 * 1000;
+
+    const runRetentionIfDue = async () => {
+      const result = await runRetention();
+      const { reports, forensics, audit } = result.deleted;
+      if (reports + forensics + audit > 0) {
+        console.log(
+          `🧹 Retention: ${reports} report(s), ${forensics} forensic report(s), ${audit} audit row(s) removed`,
+        );
+        await recordAudit({
+          action: 'retention.run',
+          actor: 'system',
+          detail: { ...result.deleted, trigger: 'schedule' },
+        });
+      }
+    };
+
+    setTimeout(() => {
+      runRetentionIfDue().catch((error) =>
+        console.warn('⚠️ Initial retention run failed:', error),
+      );
+    }, 90_000).unref?.();
+
+    setInterval(() => {
+      runRetentionIfDue().catch((error) =>
+        console.warn('⚠️ Scheduled retention run failed:', error),
+      );
+    }, RETENTION_TICK_MS).unref?.();
 
     // Create Express app
     const app = createApp();

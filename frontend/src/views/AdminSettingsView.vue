@@ -134,6 +134,63 @@
               <p v-if="testResult.greeting" class="mt-1 text-xs font-mono text-gray-500">{{ testResult.greeting }}</p>
             </div>
           </div>
+
+          <!-- Retention: the policy is the settings above; this is what it would do today. -->
+          <div v-if="category === 'data'" class="px-4 py-5 sm:px-6 bg-surface-muted border-t border-gray-200">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h3 class="text-sm font-medium text-gray-900">What a run would delete now</h3>
+                <p class="mt-1 text-sm text-gray-600 max-w-2xl">
+                  Runs automatically every six hours and once shortly after start. Deleting is
+                  irreversible, and a backup taken earlier still contains the rows.
+                </p>
+              </div>
+              <div class="flex items-center gap-3">
+                <button class="btn btn-secondary text-sm" :disabled="retentionLoading" @click="loadRetention">
+                  Recalculate
+                </button>
+                <button
+                  class="btn btn-primary text-sm"
+                  :disabled="!isAdmin || runningRetention || !retentionTotal"
+                  @click="runRetentionNow"
+                >
+                  {{ runningRetention ? 'Running…' : 'Run now' }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="retention" class="mt-4 overflow-x-auto">
+              <table class="table">
+                <thead class="table-header">
+                  <tr>
+                    <th class="table-header-cell">Data</th>
+                    <th class="table-header-cell">Keep</th>
+                    <th class="table-header-cell">Older than</th>
+                    <th class="table-header-cell text-right">Rows affected</th>
+                  </tr>
+                </thead>
+                <tbody class="table-body">
+                  <tr v-for="rule in retention.rules" :key="rule.key" class="table-row">
+                    <td class="table-cell">{{ retentionLabel(rule.key) }}</td>
+                    <td class="table-cell">
+                      {{ rule.retentionDays === 0 ? 'Forever' : `${rule.retentionDays} days` }}
+                    </td>
+                    <td class="table-cell">
+                      {{ rule.cutoff ? formatDateTime(rule.cutoff) : '—' }}
+                    </td>
+                    <td class="table-cell text-right nums">{{ rule.pending }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p v-if="retentionError" class="mt-3 rounded-md px-3 py-2 text-sm bg-danger-50 text-danger-800">
+              {{ retentionError }}
+            </p>
+            <p v-else-if="retention && retentionTotal === 0" class="mt-3 text-xs text-gray-500">
+              Nothing is currently past its retention window.
+            </p>
+          </div>
         </div>
       </template>
     </div>
@@ -141,13 +198,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { settingsApi } from '@/api/client';
 import { useAuth } from '@/composables/useAuth';
 import { useToast } from '@/composables/useToast';
-import type { AppSetting, MailboxTestResult } from '@/types/api';
+import type { AppSetting, MailboxTestResult, RetentionPlan, RetentionRuleKey } from '@/types/api';
 
 const { isAdmin } = useAuth();
 const toast = useToast();
@@ -160,6 +217,22 @@ const savingKey = ref<string | null>(null);
 const draft = reactive<Record<string, string>>({});
 const testing = ref(false);
 const testResult = ref<MailboxTestResult | null>(null);
+const retention = ref<RetentionPlan | null>(null);
+const retentionLoading = ref(false);
+const retentionError = ref<string | null>(null);
+const runningRetention = ref(false);
+
+const retentionTotal = computed(() =>
+  (retention.value?.rules ?? []).reduce((sum, rule) => sum + rule.pending, 0)
+);
+
+const retentionLabels: Record<RetentionRuleKey, string> = {
+  reports: 'Aggregate reports',
+  forensics: 'Forensic reports',
+  audit: 'Audit log',
+};
+
+const retentionLabel = (key: RetentionRuleKey): string => retentionLabels[key] ?? key;
 
 const settingsByCategory = (category: string) =>
   settings.value.filter((setting) => setting.category === category);
@@ -200,6 +273,11 @@ const save = async (setting: AppSetting) => {
     }
     draft[setting.key] = updated.value;
     toast.success(`${updated.label} saved`);
+
+    // A retention setting changes what the next run would delete, and nothing else here does.
+    if (updated.key.startsWith('data.')) {
+      await loadRetention();
+    }
   } catch (err) {
     toast.error(err instanceof Error ? err.message : 'Could not save');
   } finally {
@@ -239,4 +317,51 @@ const runMailboxTest = async () => {
 };
 
 onMounted(load);
+
+const loadRetention = async () => {
+  retentionLoading.value = true;
+  retentionError.value = null;
+
+  try {
+    retention.value = await settingsApi.retention();
+  } catch (err) {
+    retentionError.value = err instanceof Error ? err.message : 'Could not read the retention policy';
+  } finally {
+    retentionLoading.value = false;
+  }
+};
+
+/**
+ * Irreversible, so it asks first and states the number it is about to delete. `confirm` is
+ * deliberate rather than a modal: this is an administrator-only screen and a second click is
+ * the whole safeguard the operation needs.
+ */
+const runRetentionNow = async () => {
+  const total = retentionTotal.value;
+  if (!total) return;
+
+  const confirmed = window.confirm(
+    `Permanently delete ${total} row(s) that are past their retention window?\n\n` +
+      'This cannot be undone. A backup taken earlier still contains them.'
+  );
+  if (!confirmed) return;
+
+  runningRetention.value = true;
+  retentionError.value = null;
+
+  try {
+    const result = await settingsApi.runRetention();
+    const { reports, forensics, audit } = result.deleted;
+    toast.success(
+      `Removed ${reports} report(s), ${forensics} forensic report(s), ${audit} audit row(s)`
+    );
+  } catch (err) {
+    retentionError.value = err instanceof Error ? err.message : 'Retention run failed';
+  } finally {
+    runningRetention.value = false;
+    await loadRetention();
+  }
+};
+
+onMounted(loadRetention);
 </script>

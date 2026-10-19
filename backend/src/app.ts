@@ -15,7 +15,9 @@ import settingsRouter from './routes/settings.js';
 import webauthnRouter from './routes/webauthn.js';
 import oidcRouter from './routes/oidc.js';
 import providersRouter from './routes/providers.js';
+import auditRouter from './routes/audit.js';
 import { attachUser, type AuthenticatedRequest } from './middleware/auth.js';
+import { auditRequests } from './middleware/audit.js';
 import { evaluateProcessingHealth, getProcessingStatus } from './services/processingStatus.js';
 
 export interface ErrorResponse {
@@ -101,6 +103,9 @@ export function createApp(): express.Application {
 
   // Resolve the session cookie (if any) before anything that may care who is asking.
   app.use(attachUser);
+  // Must come after attachUser (it needs the actor) and before the routers, so it can see
+  // req.audit set by a handler and the final status code when the response finishes.
+  app.use(auditRequests);
 
   // Liveness check: the HTTP process is answering.
   app.get('/health/live', (req, res) => {
@@ -167,6 +172,8 @@ export function createApp(): express.Application {
   app.use('/api/domains', domainsRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/settings', settingsRouter);
+  // Reading and exporting the audit trail. Administrator-only; see routes/audit.ts.
+  app.use('/api/audit', auditRouter);
   // Administrator management of sign-in providers (the public half is under /api/auth).
   app.use('/api/providers', providersRouter);
 

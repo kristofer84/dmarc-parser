@@ -19,7 +19,7 @@ export interface SettingDefinition {
   default: string;
   label: string;
   description: string;
-  category: 'forensics' | 'processing' | 'auth' | 'domains' | 'mailbox' | 'branding';
+  category: 'forensics' | 'processing' | 'auth' | 'domains' | 'mailbox' | 'branding' | 'data';
   min?: number;
   max?: number;
   /** Never returned to a client; the UI shows whether a value is stored instead. */
@@ -201,6 +201,42 @@ export const SETTINGS: SettingDefinition[] = [
     description: 'How long an account stays locked after too many failed logins.',
     category: 'auth',
   },
+  {
+    key: 'data.reportRetentionDays',
+    type: 'number',
+    default: '0',
+    min: 0,
+    max: 3650,
+    label: 'Keep aggregate reports for (days)',
+    description:
+      'Deletes aggregate reports whose reporting period ended more than this many days ago, and their records with them. 0 keeps them forever. Irreversible - and a backup taken earlier still contains them.',
+    category: 'data',
+    dangerous: true,
+  },
+  {
+    key: 'data.forensicRetentionDays',
+    type: 'number',
+    default: '0',
+    min: 0,
+    max: 3650,
+    label: 'Keep forensic reports for (days)',
+    description:
+      'Forensic reports can contain the reported message itself - headers always, the body when enabled below. This is third-party content you may not need to keep; 0 keeps them forever. Irreversible.',
+    category: 'data',
+    dangerous: true,
+  },
+  {
+    key: 'data.auditRetentionDays',
+    type: 'number',
+    default: '365',
+    min: 0,
+    max: 3650,
+    label: 'Keep audit records for (days)',
+    description:
+      'The audit log is evidence of who changed what. Export it before shortening this. 0 keeps it forever; the default is one year.',
+    category: 'data',
+    dangerous: true,
+  },
 ];
 
 const DEFINITIONS = new Map(SETTINGS.map((s) => [s.key, s]));
@@ -253,6 +289,12 @@ export async function getSetting(key: string): Promise<string> {
     console.warn(`⚠️ Failed to read setting ${key}, using default:`, error);
     return definition.default;
   }
+}
+
+/** The value actually stored in the database, ignoring the declared default. */
+export async function getStoredSetting(key: string): Promise<string | null> {
+  const row = await prisma.setting.findUnique({ where: { key } });
+  return row?.value ?? null;
 }
 
 export async function getBooleanSetting(key: string): Promise<boolean> {

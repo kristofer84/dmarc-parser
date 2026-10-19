@@ -150,9 +150,20 @@ router.post('/register/verify', requireAuth, rateLimit(20, 60000), async (req: A
   );
 
   if (!outcome.ok) {
+    req.audit = {
+      action: 'auth.passkey.register',
+      outcome: 'failure',
+      target: req.user!.email,
+      detail: { reason: outcome.reason },
+    };
     return sendFailure(res, outcome, REGISTRATION_FAILURE_STATUS);
   }
 
+  req.audit = {
+    action: 'auth.passkey.register',
+    target: req.user!.email,
+    detail: { label },
+  };
   return res.status(201).json({ credentials: await listCredentials(req.user!.id) });
 });
 
@@ -186,6 +197,14 @@ router.post('/login/verify', rateLimit(20, 60000), async (req: AuthenticatedRequ
   );
 
   if (!outcome.ok) {
+    // A failed ceremony is worth a row: it is the shape a credential-stuffing or a cloned
+    // authenticator makes. The generic message the client got is deliberately not recorded
+    // as if it were the reason.
+    req.audit = {
+      action: 'auth.login',
+      outcome: 'failure',
+      detail: { method: 'passkey', reason: outcome.reason },
+    };
     return sendFailure(res, outcome);
   }
 
@@ -197,6 +216,12 @@ router.post('/login/verify', rateLimit(20, 60000), async (req: AuthenticatedRequ
   setSessionCookie(req, res, session.token, session.expiresAt);
 
   const domains = await getDomainsForUser(outcome.user.id);
+  req.audit = {
+    action: 'auth.login',
+    actor: outcome.user.email,
+    actorId: outcome.user.id,
+    detail: { method: 'passkey', role: outcome.user.role },
+  };
   return res.json({ user: outcome.user, domains, expiresAt: session.expiresAt.toISOString() });
 });
 
@@ -214,6 +239,7 @@ router.delete('/credentials/:id', requireAuth, async (req: AuthenticatedRequest,
   }
 
   console.log(`🔑 passkey removed: user=${req.user!.email} id=${req.params.id}`);
+  req.audit = { action: 'auth.passkey.remove', target: req.user!.email, detail: { credentialId: req.params.id } };
   return res.json({ credentials: await listCredentials(req.user!.id) });
 });
 

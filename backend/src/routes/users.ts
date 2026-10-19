@@ -152,6 +152,11 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
   });
 
   console.log(`👤 ${req.user!.email} created user ${created.email} (${created.role})`);
+  req.audit = {
+    action: 'user.create',
+    target: created.email,
+    detail: { role: created.role, domains: (domains as string[] | undefined) ?? [] },
+  };
   return res.status(201).json({ user: serializeUser(withDomains!) });
 });
 
@@ -200,6 +205,17 @@ router.patch('/:id', async (req: AuthenticatedRequest, res) => {
   }
 
   console.log(`👤 ${req.user!.email} updated user ${updated.email}`);
+  req.audit = {
+    action: 'user.update',
+    target: updated.email,
+    detail: {
+      changed: Object.fromEntries(
+        Object.entries({ name, role, isActive, mustChangePassword }).filter(
+          ([, value]) => value !== undefined,
+        ),
+      ),
+    },
+  };
   return res.json({ user: serializeUser(updated) });
 });
 
@@ -238,6 +254,11 @@ router.post('/:id/password', async (req: AuthenticatedRequest, res) => {
   }
 
   console.log(`🔐 ${req.user!.email} reset the password of ${target.email}`);
+  req.audit = {
+    action: 'user.password.reset',
+    target: target.email,
+    detail: { sessionsRevoked: target.id !== req.user!.id, mustChangePassword: mustChangePassword !== false },
+  };
   return res.json({ ok: true });
 });
 
@@ -260,6 +281,7 @@ router.put('/:id/domains', async (req: AuthenticatedRequest, res) => {
   );
 
   console.log(`👤 ${req.user!.email} set domains for ${target.email}: ${applied.join(', ') || '(none)'}`);
+  req.audit = { action: 'user.domains.set', target: target.email, detail: { domains: applied } };
   return res.json({ domains: applied });
 });
 
@@ -278,6 +300,7 @@ router.delete('/:id/passkeys', async (req: AuthenticatedRequest, res) => {
   const removed = await removeAllCredentialsForUser(target.id);
 
   console.log(`🔑 ${req.user!.email} removed ${removed} passkey(s) from ${target.email}`);
+  req.audit = { action: 'user.passkeys.clear', target: target.email, detail: { removed } };
   return res.json({ removed });
 });
 
@@ -302,6 +325,7 @@ router.delete('/:id', async (req: AuthenticatedRequest, res) => {
 
   await prisma.user.delete({ where: { id: target.id } });
   console.log(`👤 ${req.user!.email} deleted user ${target.email}`);
+  req.audit = { action: 'user.delete', target: target.email, detail: { role: target.role } };
   return res.json({ ok: true });
 });
 

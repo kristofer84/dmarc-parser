@@ -89,6 +89,13 @@ router.get('/oidc/:id/callback', rateLimit(50, 60000, 'oidc-callback'), async (r
   const outcome = await completeLogin({ providerId: req.params.id, code, state, currentUrl });
 
   if (!outcome.ok) {
+    // The redirect target already tells the login page why; the audit row must too, or the
+    // difference between "state mismatch" and "email unverified" is lost.
+    req.audit = {
+      action: 'auth.login',
+      outcome: 'failure',
+      detail: { method: 'oidc', provider: req.params.id, reason: outcome.reason },
+    };
     return res.redirect(302, `/login?error=${FAILURE_CODE[outcome.reason]}`);
   }
 
@@ -103,6 +110,18 @@ router.get('/oidc/:id/callback', rateLimit(50, 60000, 'oidc-callback'), async (r
   console.log(
     `🔐 Login (${outcome.outcome}): ${outcome.user.email} (${outcome.role}) [${domains.length} domain(s)]`,
   );
+
+  req.audit = {
+    action: 'auth.login',
+    actor: outcome.user.email,
+    actorId: outcome.user.id,
+    detail: {
+      method: 'oidc',
+      provider: req.params.id,
+      outcome: outcome.outcome,
+      role: outcome.role,
+    },
+  };
 
   return res.redirect(302, '/');
 });

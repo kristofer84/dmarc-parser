@@ -43,9 +43,13 @@ services:
       # when a browser calls the API from a different origin than the UI.
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
     volumes:
-      # The SQLite database - everything the app knows lives here. Back it up with:
-      #   docker run --rm -v dmarc-data:/data -v "$PWD":/backup alpine \
-      #     tar czf /backup/dmarc-data.tgz -C /data .
+      # The SQLite database - everything the app knows lives here. Do not tar the live
+      # directory: a copy taken mid-transaction can be torn. Take a snapshot through
+      # SQLite instead (busy timeout because the app is writing):
+      #   docker run --rm -v dmarc-data:/data -v "$PWD":/backup alpine sh -c \
+      #     'apk add --no-cache sqlite >/dev/null && sqlite3 -cmd ".timeout 10000" \
+      #      /data/data.db ".backup /backup/dmarc-$(date +%F).db"'
+      # Restore, drill and retention: deploy/README.md sections 6-9.
       - dmarc-data:/app/data
     logging:
       driver: json-file

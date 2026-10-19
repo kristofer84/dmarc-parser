@@ -58,6 +58,9 @@ jobs:
             # `latest` means "current main", which is what the quickstart pulls.
             type=raw,value=latest,enable={{is_default_branch}}
 
+      # SBOM: the bill of materials is attested and pushed with the image, so an operator
+      # asking "what is in this, and is any of it known-bad" can answer it from the artifact
+      # rather than from a repository listing a commit nobody pulled.
       - name: Build and push
         id: build
         uses: docker/build-push-action@v7
@@ -70,6 +73,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Shorthand for --attest=type=sbom; it rides along with the pushed image.
+          sbom: true
 
       - name: Attest provenance
         uses: actions/attest-build-provenance@v3

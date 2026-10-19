@@ -1,0 +1,53 @@
+# Dependabot, weekly.
+#
+# The risk this is meant to cover is a known-vulnerable package sitting unpatched because
+# nobody looked. The risk it creates is a queue of forty PRs that nobody reads. So: minor
+# and patch updates arrive grouped per ecosystem, where they can be reviewed as one change,
+# and majors stay separate because they are the ones that need a decision.
+#
+# Only the ecosystems this repo actually has. Nothing is watched that would produce noise
+# for files that do not exist.
+
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+
+  # The Dockerfile is at the repo root; the base images are node:24-alpine and node:24-slim.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']

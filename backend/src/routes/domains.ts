@@ -57,6 +57,7 @@ router.post('/discover', requireAdmin, async (req: AuthenticatedRequest, res) =>
   if (result.added.length > 0) {
     console.log(`🔎 ${req.user!.email} discovered ${result.added.length} domain(s): ${result.added.join(', ')}`);
   }
+  req.audit = { action: 'domain.discover', detail: { added: result.added } };
   return res.json(result);
 });
 
@@ -64,6 +65,7 @@ router.post('/discover', requireAdmin, async (req: AuthenticatedRequest, res) =>
 router.post('/check-all', requireAdmin, rateLimit(5, 60000), async (req: AuthenticatedRequest, res) => {
   const result = await runAllChecks();
   console.log(`🔎 ${req.user!.email} ran all domain checks: ${result.checked} checked, ${result.failed} failed`);
+  req.audit = { action: 'domain.check_all', detail: result };
   return res.json(result);
 });
 
@@ -89,6 +91,11 @@ router.post('/', requireAdmin, async (req: AuthenticatedRequest, res) => {
     });
 
     console.log(`🔎 ${req.user!.email} added domain ${created.name}`);
+    req.audit = {
+      action: 'domain.create',
+      target: created.name,
+      detail: { monitored: created.monitored },
+    };
     return res.status(201).json({ domain: (await getDomain(created.id, null))?.domain ?? null });
   } catch (error) {
     const typed = error as Error & { statusCode?: number; code?: string };
@@ -130,6 +137,17 @@ router.patch('/:id', requireAdmin, async (req: AuthenticatedRequest, res) => {
     });
 
     console.log(`🔎 ${req.user!.email} updated domain ${existing.name}`);
+    req.audit = {
+      action: 'domain.update',
+      target: existing.name,
+      detail: {
+        changed: Object.fromEntries(
+          Object.entries({ dkimSelectors, expectedMx, notes, monitored }).filter(
+            ([, value]) => value !== undefined,
+          ),
+        ),
+      },
+    };
     return res.json({ domain: (await getDomain(existing.id, null))?.domain ?? null });
   } catch (error) {
     const typed = error as Error & { statusCode?: number; code?: string };
@@ -146,6 +164,7 @@ router.delete('/:id', requireAdmin, async (req: AuthenticatedRequest, res) => {
 
   await prisma.domain.delete({ where: { id: existing.id } });
   console.log(`🔎 ${req.user!.email} removed domain ${existing.name}`);
+  req.audit = { action: 'domain.delete', target: existing.name };
   return res.json({ ok: true });
 });
 
@@ -160,6 +179,7 @@ router.post('/:id/check', rateLimit(20, 60000), async (req: AuthenticatedRequest
 
   try {
     const report = await runDomainCheck(existing.id);
+    req.audit = { action: 'domain.check', target: existing.name, detail: { status: report.status } };
     return res.json(report);
   } catch (error) {
     const typed = error as Error & { statusCode?: number; code?: string };
@@ -248,6 +268,9 @@ router.post('/:id/records', rateLimit(20, 60000), async (req: AuthenticatedReque
     console.log(
       `🧾 ${req.user!.email} generated record suggestions for ${existing.name} (${generated.records.length} record(s))`,
     );
+
+    // A POST only because it carries a body; nothing is written, so nothing is audited.
+    req.audit = { ignore: true };
 
     return res.json({
       domain: existing.name,

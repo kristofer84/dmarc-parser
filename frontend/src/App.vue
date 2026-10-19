@@ -215,11 +215,14 @@ const accountNavLink: NavLink = { label: 'Account', to: '/account', activeFor: [
 // shorter menu instead of a second hardcoded list.
 const moreNavLinks = computed<NavLink[]>(() => [
   { label: 'Processing Logs', to: '/processing-logs', activeFor: ['ProcessingLogs'] },
+  // The glossary is for everyone: it explains the vocabulary the reports and checks use.
+  { label: 'Glossary', to: '/glossary', activeFor: ['Glossary'] },
   ...(isAdmin.value
     ? [
         { label: 'Settings', to: '/admin/settings', activeFor: ['AdminSettings'] },
         { label: 'Users', to: '/admin/users', activeFor: ['AdminUsers'] },
         { label: 'Identity providers', to: '/admin/providers', activeFor: ['AdminProviders'] },
+        { label: 'Audit log', to: '/admin/audit', activeFor: ['AdminAudit'] },
       ]
     : []),
 ]);

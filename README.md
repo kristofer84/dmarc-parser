@@ -42,7 +42,12 @@ header has a light/dark/system toggle that remembers the choice.
 
 All state is the SQLite database in that volume - back it up and you have everything.
 Before exposing it to the internet, put TLS in front and set `COOKIE_SECURE=true`;
-[deploy/README.md](deploy/README.md) is the runbook (nginx, certificate, hardened env).
+[deploy/README.md](deploy/README.md) is the runbook (nginx, certificate, hardened env), and its
+[§6-§8](deploy/README.md#6-backup) cover measured backup, restore and a restore drill.
+
+Security: [SECURITY.md](SECURITY.md) for disclosure and what the code enforces. Compliance:
+[docs/nis2.md](docs/nis2.md) maps NIS2 Art. 21 clause by clause to what this app does and, more
+usefully, what it does not. Everything else is indexed in [docs/](docs/README.md).
 
 ## Licence
 
@@ -57,10 +62,17 @@ hosted fork is not permitted.
 - **Aggregate (rua) reports**: XML parsing with validation, per-source-IP pass/fail breakdown
 - **Forensic (ruf) reports**: per-message authentication failures, including the failing message's headers when the reporter attaches it
 - **Multi-user with per-domain access**: administrators see everything, users see only the domains assigned to them
-- **Safe to expose**: session authentication, login rate limiting and lockout, scoped queries, audit trail
+- **Passkeys and SSO, without giving up passwords**: WebAuthn sign-in, plus OIDC as an identity-only third way in
+- **Persistent audit trail**: who changed what, from where, and whether it worked - with filters, CSV/JSON export and a SHA-256 digest over each export
+- **Data retention**: per-dataset policies for aggregate reports, forensic reports and the audit log, with a preview of exactly what a run would delete
+- **Safe to expose**: session authentication, login rate limiting and lockout, scoped queries
 - **Honest health**: reports `unhealthy` when ingestion is broken instead of answering 200 from a process that has not stored a report in days
+- **Glossary**: every term the reports and DNS checks use, explained in-app at `/glossary`
 
 ## 🏗️ Architecture
+
+Where each concern lives, and the gotcha attached to it, is in
+[docs/where-things-live.md](docs/where-things-live.md) — read that before changing a subsystem.
 
 ### Backend (Node.js + Express)
 - **Runtime**: Node.js with ESM modules
@@ -68,6 +80,7 @@ hosted fork is not permitted.
 - **Database**: SQLite with Prisma ORM
 - **Email**: node-imap for IMAP connectivity
 - **Parsing**: xml2js for DMARC XML processing
+- **Audit & retention**: append-only `audit_events` table written by one middleware; scheduled pruning driven by the `data.*` settings
 
 ### Frontend (Vue 3)
 - **Framework**: Vue 3 with Composition API
@@ -218,11 +231,15 @@ In production mode, the application automatically processes emails every 5 minut
 
 ## 🔒 Security Features
 
-- Input validation and sanitization
-- Rate limiting on API endpoints
-- SQL injection prevention via Prisma
-- Environment-based configuration
-- Error handling and logging
+Details, and how to report a problem, are in [SECURITY.md](SECURITY.md).
+
+- Passkeys (WebAuthn) and OIDC sign-in; the password remains the recovery path
+- scrypt password hashing; opaque server-side sessions storing only the token hash
+- Login rate limiting and per-account lockout
+- Queries scoped per domain (out-of-scope ids return 404, not 403)
+- Persistent audit trail for authentication and every administrative change
+- Input validation, Prisma parameterisation, environment-based configuration
+- Provenance and SBOM attestations on published images
 
 ## 🛠️ Development
 

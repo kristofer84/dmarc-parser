@@ -39,6 +39,12 @@ import type {
   DomainUpdateInput,
   RecordSuggestions,
   RecordSuggestionOptions,
+  AuditEvent,
+  AuditFilters,
+  AuditActionCount,
+  AuditExport,
+  RetentionPlan,
+  RetentionRunResult,
 } from '@/types/api';
 
 /**
@@ -470,6 +476,70 @@ class ApiClient {
     return response.data;
   }
 
+  // ------------------------------------------------------------------ audit trail
+  async getAuditEvents(
+    filters: AuditFilters = {}
+  ): Promise<PaginatedResponse<AuditEvent>> {
+    const params: Record<string, string> = {};
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== null && value !== '') {
+        params[key] = String(value);
+      }
+    }
+
+    const response = await this.client.get<PaginatedResponse<AuditEvent>>('/audit', { params });
+    return response.data;
+  }
+
+  async getAuditActions(): Promise<AuditActionCount[]> {
+    const response = await this.client.get<{ data: AuditActionCount[] }>('/audit/actions');
+    return response.data.data;
+  }
+
+  /**
+   * Downloads are blobs, not JSON, so the digest header has to be read here: axios cannot
+   * expose a response header to the caller after returning only the body.
+   */
+  async exportAudit(filters: AuditFilters, format: 'csv' | 'json'): Promise<AuditExport> {
+    const params: Record<string, string> = { format };
+    for (const [key, value] of Object.entries(filters)) {
+      if (key === 'page' || key === 'limit') continue;
+      if (value !== undefined && value !== null && value !== '') {
+        params[key] = String(value);
+      }
+    }
+
+    const response = await this.client.get<Blob>('/audit/export', {
+      params,
+      responseType: 'blob',
+      // An export of a large window can outlive the client's 10s default.
+      timeout: 60000,
+    });
+
+    const disposition = String(response.headers['content-disposition'] ?? '');
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? null;
+    const digest = response.headers['x-audit-digest'];
+    const rows = response.headers['x-audit-rows'];
+
+    return {
+      blob: response.data,
+      digest: typeof digest === 'string' ? digest : null,
+      filename,
+      rows: typeof rows === 'string' ? Number(rows) : null,
+    };
+  }
+
+  // ------------------------------------------------------------------ retention
+  async getRetention(): Promise<RetentionPlan> {
+    const response = await this.client.get<RetentionPlan>('/settings/retention');
+    return response.data;
+  }
+
+  async runRetention(): Promise<RetentionRunResult> {
+    const response = await this.client.post<RetentionRunResult>('/settings/retention/run');
+    return response.data;
+  }
+
   // Health check
   async healthCheck(): Promise<{ status: string; timestamp: string; uptime: number }> {
     // Use absolute URL to bypass the /api base URL
@@ -556,6 +626,14 @@ export const settingsApi = {
   list: () => apiClient.getSettings(),
   update: (key: string, value: string) => apiClient.updateSetting(key, value),
   testMailbox: (payload: Parameters<typeof apiClient.testMailbox>[0]) => apiClient.testMailbox(payload),
+  retention: () => apiClient.getRetention(),
+  runRetention: () => apiClient.runRetention(),
+};
+
+export const auditApi = {
+  list: (filters?: AuditFilters) => apiClient.getAuditEvents(filters),
+  actions: () => apiClient.getAuditActions(),
+  export: (filters: AuditFilters, format: 'csv' | 'json') => apiClient.exportAudit(filters, format),
 };
 
 export const brandingApi = {

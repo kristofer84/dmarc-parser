@@ -123,6 +123,11 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
   });
   invalidateProviderCache();
   console.log(`🔐 ${req.user!.email} added sign-in provider ${created.name} (${created.issuer})`);
+  req.audit = {
+    action: 'provider.create',
+    target: created.name,
+    detail: { issuer: created.issuer, enabled: created.enabled },
+  };
   return res.status(201).json({ provider: serializeProvider(created) });
 });
 
@@ -151,6 +156,12 @@ router.patch('/:id', async (req: AuthenticatedRequest, res) => {
   // old one.
   invalidateProviderCache(updated.id);
   console.log(`🔐 ${req.user!.email} updated sign-in provider ${updated.name}`);
+  req.audit = {
+    action: 'provider.update',
+    target: updated.name,
+    // The keys that changed, never the values - a client secret may be among them.
+    detail: { changed: Object.keys(data) },
+  };
   return res.json({ provider: serializeProvider(updated) });
 });
 
@@ -169,6 +180,7 @@ router.delete('/:id', async (req: AuthenticatedRequest, res) => {
   await prisma.authProvider.delete({ where: { id: existing.id } });
   invalidateProviderCache(existing.id);
   console.log(`🔐 ${req.user!.email} removed sign-in provider ${existing.name}`);
+  req.audit = { action: 'provider.delete', target: existing.name, detail: { issuer: existing.issuer } };
   return res.json({ ok: true });
 });
 
@@ -183,6 +195,12 @@ router.post('/:id/test', async (req: AuthenticatedRequest, res) => {
   console.log(
     `🔐 ${req.user!.email} tested provider ${provider.name}: ${result.ok ? 'ok' : result.message}`,
   );
+  req.audit = {
+    action: 'provider.test',
+    target: provider.name,
+    outcome: result.ok ? 'success' : 'failure',
+    detail: { message: result.message },
+  };
   return res.json(result);
 });
 

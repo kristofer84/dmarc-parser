@@ -458,3 +458,69 @@ export interface ProviderTestResult {
     jwks_uri: string;
   };
 }
+// ------------------------------------------------------------------ audit trail
+
+export type AuditOutcome = 'success' | 'failure';
+
+/** One row of the audit trail. `detail` is a JSON string, redacted server-side. */
+export interface AuditEvent {
+  id: string;
+  createdAt: string;
+  actor: string;
+  action: string;
+  outcome: AuditOutcome;
+  target: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  detail: string | null;
+}
+
+export interface AuditFilters {
+  actor?: string;
+  /** Exact action, or a family when it ends with '.' (e.g. `auth.`). */
+  action?: string;
+  outcome?: AuditOutcome | '';
+  target?: string;
+  /** Inclusive, ISO date. */
+  from?: string;
+  /** Inclusive calendar day; the client sends the end of it. */
+  to?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface AuditActionCount {
+  action: string;
+  count: number;
+}
+
+export interface AuditExport {
+  blob: Blob;
+  /** SHA-256 of the file body, as reported by the server. Null if the header was stripped. */
+  digest: string | null;
+  filename: string | null;
+  rows: number | null;
+}
+
+// ------------------------------------------------------------------ retention
+
+export type RetentionRuleKey = 'reports' | 'forensics' | 'audit';
+
+export interface RetentionRule {
+  key: RetentionRuleKey;
+  setting: string;
+  /** 0 means "keep forever", and `cutoff` is then null. */
+  retentionDays: number;
+  cutoff: string | null;
+  pending: number;
+}
+
+export interface RetentionPlan {
+  generatedAt: string;
+  rules: RetentionRule[];
+}
+
+export interface RetentionRunResult {
+  plan: RetentionPlan;
+  deleted: Record<RetentionRuleKey, number>;
+}

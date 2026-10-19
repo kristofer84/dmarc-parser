@@ -120,6 +120,37 @@ model ForensicReport {
   @@map("forensic_reports")
 }
 
+/// Append-only record of security-relevant actions: who did what, when, from where, and
+/// whether it worked. Deliberately NOT foreign-keyed to User - deleting an account must not
+/// delete the evidence of what that account did, so the actor is kept as text.
+///
+/// Nothing in the application updates or deletes these rows; the only deletion is the
+/// retention prune, which is itself audited. That is the honest limit of what an in-process
+/// log can promise: it proves the app never rewrote history, not that an operator with the
+/// database file could not. Exporting on a schedule is what closes that gap.
+model AuditEvent {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  /// Email address of the actor, or 'anonymous' / 'system'.
+  actor     String
+  actorId   String?
+  /// Dotted, stable identifier, e.g. 'auth.login' or 'settings.update'.
+  action    String
+  /// success | failure
+  outcome   String   @default("success")
+  /// What the action was applied to: a user email, domain, setting key or record id.
+  target    String?
+  ip        String?
+  userAgent String?
+  /// JSON object as text. Passwords, secrets and tokens are redacted before write.
+  detail    String?
+
+  @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([actor, createdAt])
+  @@map("audit_events")
+}
+
 /// Runtime application options, editable from the admin UI.
 model Setting {
   key       String   @id

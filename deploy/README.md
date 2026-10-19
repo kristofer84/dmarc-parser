@@ -162,3 +162,179 @@ Rules the server enforces whatever the provider: only a **verified** email may l
 account (an unverified one is the account-takeover path, so it is refused); and an SSO session is
 identical to a password login, so per-domain access and the audit trail are unchanged. With no
 provider configured, nothing about the login page changes.
+
+## 6. Backup
+
+Everything the app knows is in the SQLite file: reports and records, forensic reports
+(including any stored message bodies), users and password hashes, sessions, passkeys,
+identity providers and their client secrets, per-domain assignments, branding, the mailbox
+password when it was entered in the UI, and the audit log. There is no uploads directory,
+cache or second config file to remember. `.env` is configuration, not state: keep a copy
+with your secrets if `IMAP_PASSWORD` lives there, because then it is the only copy of that
+secret.
+
+**Do not `cp` or `tar` the live file.** A copy taken while a transaction is committing can
+contain a page that was only half-written; in testing, copying a 19 MB database under
+concurrent writes produced a file whose `PRAGMA integrity_check` failed with
+`2nd reference to page ...`. It is not deterministic - two other copies of the same
+database were fine - which makes it worse, not better. `sqlite3 .backup` and `VACUUM INTO`
+take a consistent snapshot through SQLite itself, under the file lock.
+
+The sqlite3 CLI has no busy timeout by default. Against a database being written to,
+`.backup` failed with `Error: database is locked` and left a 0-byte file behind. Always
+pass `-cmd '.timeout 10000'` and check the size of the result.
+
+Volume (`compose.quickstart.yml`, `dmarc-data`):
+
+```bash
+docker run --rm \
+  -v dmarc-data:/data \
+  -v "$PWD":/backup \
+  alpine sh -c 'apk add --no-cache sqlite >/dev/null && \
+    sqlite3 -cmd ".timeout 10000" /data/data.db ".backup /backup/dmarc-$(date +%F).db"'
+```
+
+That installs the CLI into a throwaway container. Pin the alpine tag if you care about
+reproducing it, and pre-pull the image so a backup does not depend on the network being up.
+`.backup` copies page for page, including free pages; use
+`VACUUM INTO '/backup/dmarc-$(date +%F).db'` instead to write a compacted snapshot (it
+needs free space about the size of the database).
+
+The app image itself has no sqlite3 binary, but Node 24 includes `node:sqlite`, so the same
+snapshot can be taken without pulling anything:
+
+```bash
+docker compose -f compose.quickstart.yml exec dmarc-parser \
+  node -e "const {DatabaseSync}=require('node:sqlite');new DatabaseSync('/app/data/data.db').exec(\"VACUUM INTO '/app/data/backup.db'\")"
+docker compose -f compose.quickstart.yml cp dmarc-parser:/app/data/backup.db ./dmarc-$(date +%F).db
+docker compose -f compose.quickstart.yml exec dmarc-parser rm /app/data/backup.db
+```
+
+Bind mount (`docker-compose.yml`, `./data`):
+
+```bash
+sqlite3 -cmd '.timeout 10000' ./data/data.db ".backup '/path/to/backups/dmarc-$(date +%F).db'"
+# or, compacted:
+sqlite3 -cmd '.timeout 10000' ./data/data.db "VACUUM INTO '/path/to/backups/dmarc-$(date +%F).db'"
+```
+
+Write the backup outside `./data`: a file sitting next to the database is inside the next
+snapshot and inside whatever copies that directory.
+
+Verify every backup, and keep the check in the cron job:
+
+```bash
+sqlite3 dmarc-2026-10-19.db "PRAGMA integrity_check;"
+sqlite3 dmarc-2026-10-19.db "SELECT count(*) FROM reports;"
+```
+
+`ok` and a non-zero count, or the run failed. An empty file passes nothing.
+
+Schedule: daily is enough here - the database is small (19 MB with 428 reports) and a day of
+lost mail can be re-fetched from the mailbox if the report mail is still there. Run it at a
+quiet hour, copy the result off the host, and keep a known-good older copy as well as the
+latest: the failure you are protecting against may have happened days ago. A workable
+default is 7 daily, 4 weekly and 12 monthly; set the numbers from your own policy rather
+than from this sentence.
+
+## 7. Restore
+
+Stop the app, replace the file, start it. Do not use `docker compose down -v`: `-v`
+deletes `dmarc-data`, which is the thing being restored.
+
+Volume:
+
+```bash
+docker compose -f compose.quickstart.yml down
+docker run --rm -v dmarc-data:/data -v "$PWD":/backup alpine sh -c \
+  'rm -f /data/data.db /data/data.db-wal /data/data.db-journal && \
+   cp /backup/dmarc-2026-10-19.db /data/data.db'
+docker compose -f compose.quickstart.yml up -d
+```
+
+Bind mount: copy the backup over `data/data.db`, after saving the current file as
+`data/data.db.before-restore`, and remove any `-wal`/`-journal` sidecars.
+
+The app runs `npx prisma db push --accept-data-loss` on every start
+(`backend/src/db/prisma.ts`), so a backup from an older release is carried forward to the
+current schema automatically. The reverse does not work: an older image cannot read a
+schema written by a newer one, and `db push` will not roll it back. Restore an old backup
+with the image tag that wrote it, or restore a backup no newer image has touched. That is
+also why you pin the tag (`...:1.2.3`, not `:latest`) before restoring, and keep the
+previous image until the restored instance has run for a while.
+
+Check the file before starting:
+
+```bash
+sqlite3 data/data.db "PRAGMA integrity_check;"
+sqlite3 data/data.db "SELECT 'reports', count(*) FROM reports
+  UNION ALL SELECT 'records', count(*) FROM records
+  UNION ALL SELECT 'users', count(*) FROM users;"
+```
+
+`ok`, and non-zero for `reports`, `records` and `users` (an empty-looking database means the
+copy did not land). `forensic_reports` may legitimately be zero. Then check the running app:
+
+```bash
+curl -fsS localhost:8096/health
+```
+
+`-f` turns the 503 into a failure, which is the point - the endpoint reports `unhealthy`
+when ingestion is broken rather than answering 200 from a process that has stored nothing
+for days. A 200 is necessary but not sufficient: read the body. `processing.mailboxConfigured:
+false` means the app is healthy and will ingest nothing, and `processing.lastCompletedAt`
+is the evidence that a cycle actually finished after the restore. `/health/live` only says
+the process is up; it says nothing about the database.
+
+## 8. Restore drill
+
+A backup is not a backup until it has been restored once. Do this on a throwaway volume and
+port so the live instance is never at risk:
+
+```bash
+docker volume create dmarc-restore-test
+docker run --rm -v dmarc-restore-test:/data -v "$PWD":/backup alpine sh -c \
+  'cp /backup/dmarc-2026-10-19.db /data/data.db'
+docker run -d --rm --name dmarc-restore-test \
+  -p 127.0.0.1:18096:8096 \
+  -v dmarc-restore-test:/app/data \
+  -e COOKIE_SECURE=false \
+  ghcr.io/kristofer84/dmarc-parser:1.2.3
+curl -fsS localhost:18096/health
+docker stop dmarc-restore-test
+docker volume rm dmarc-restore-test
+```
+
+Sign in on `http://localhost:18096`, open a report, and compare the UI counts with the
+`sqlite3` counts above. If the tag the backup came from has been deleted from the registry,
+the drill has failed: the backup is not restorable by you. Run the drill after every upgrade
+and after changing the backup job.
+
+## 9. Retention and backups
+
+Three admin settings control how long data is kept: `data.reportRetentionDays` for aggregate
+reports, `data.forensicRetentionDays` for forensic reports, and `data.auditRetentionDays` for
+the audit log. `0` keeps forever for each. The forensic ones matter beyond disk: a forensic
+report can contain the reported message's headers and body, so pruning them is the way to
+stop holding third-party content you do not need. Pruning is irreversible - there is no undo
+and no "deleted" view.
+
+Retention and backups interact in two ways that surprise people:
+
+- Deleting rows does not change a backup that already exists. A snapshot taken before the
+  prune still contains the data, and so does every copy of that snapshot. If the point of
+  the retention period is to stop retaining something, expire backups on the same schedule;
+  otherwise the row survives in the archive.
+- SQLite does not return freed pages to the filesystem by default. After a prune the file
+  stays the same size and the space is reused by later rows. To actually shrink it, run
+  `VACUUM` - which rewrites the whole file, needs free disk equal to the database size, and
+  blocks writers for the duration. Do it in a maintenance window:
+
+```bash
+docker compose -f compose.quickstart.yml stop
+sqlite3 data/data.db "VACUUM;"
+docker compose -f compose.quickstart.yml start
+```
+
+`VACUUM INTO` during a backup compacts the copy without touching the live file, which is
+usually the better trade: the live database keeps its free pages and the archive is small.

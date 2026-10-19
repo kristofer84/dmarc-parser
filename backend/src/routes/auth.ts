@@ -39,6 +39,12 @@ router.post('/login', rateLimit(10, 60000), async (req: AuthenticatedRequest, re
 
   if (!outcome.ok) {
     if (outcome.reason === 'locked') {
+      req.audit = {
+        action: 'auth.login',
+        outcome: 'failure',
+        actor: email.trim().toLowerCase(),
+        detail: { reason: 'locked', method: 'password' },
+      };
       return sendError(
         res,
         429,
@@ -47,7 +53,14 @@ router.post('/login', rateLimit(10, 60000), async (req: AuthenticatedRequest, re
         outcome.lockedUntil ? { lockedUntil: outcome.lockedUntil.toISOString() } : undefined,
       );
     }
-    // Deliberately identical for "no such user" and "wrong password".
+    // Deliberately identical for "no such user" and "wrong password". The audit row keeps the
+    // attempted address, which the response deliberately does not confirm.
+    req.audit = {
+      action: 'auth.login',
+      outcome: 'failure',
+      actor: email.trim().toLowerCase(),
+      detail: { reason: 'invalid_credentials', method: 'password' },
+    };
     return sendError(res, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
   }
 
@@ -61,6 +74,13 @@ router.post('/login', rateLimit(10, 60000), async (req: AuthenticatedRequest, re
   const domains = await getDomainsForUser(outcome.user.id);
   console.log(`🔑 Login: ${outcome.user.email} (${outcome.user.role})`);
 
+  req.audit = {
+    action: 'auth.login',
+    actor: outcome.user.email,
+    actorId: outcome.user.id,
+    detail: { method: 'password', role: outcome.user.role },
+  };
+
   return res.json({ user: outcome.user, domains, expiresAt: session.expiresAt.toISOString() });
 });
 
@@ -70,6 +90,10 @@ router.post('/logout', async (req: AuthenticatedRequest, res) => {
     await destroySession(req.sessionToken);
   }
   clearSessionCookie(res);
+
+  if (req.user) {
+    req.audit = { action: 'auth.logout', target: req.user.email };
+  }
   return res.json({ ok: true });
 });
 
@@ -89,6 +113,12 @@ router.post('/change-password', requireAuth, async (req: AuthenticatedRequest, r
 
   const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
   if (!user || !verifyPassword(currentPassword, user.passwordHash)) {
+    req.audit = {
+      action: 'auth.password.change',
+      outcome: 'failure',
+      target: req.user!.email,
+      detail: { reason: 'current_password_incorrect' },
+    };
     return sendError(res, 401, 'INVALID_CREDENTIALS', 'Current password is incorrect');
   }
 
@@ -117,6 +147,11 @@ router.post('/change-password', requireAuth, async (req: AuthenticatedRequest, r
   setSessionCookie(req, res, session.token, session.expiresAt);
 
   console.log(`🔐 Password changed for ${user.email}`);
+  req.audit = {
+    action: 'auth.password.change',
+    target: user.email,
+    detail: { sessionsRevoked: true },
+  };
   return res.json({ ok: true });
 });
 
@@ -163,6 +198,13 @@ router.post('/register', rateLimit(5, 60000), async (req: AuthenticatedRequest, 
   });
 
   console.log(`👤 Registered ${created.email} (no domains assigned yet)`);
+  req.audit = {
+    action: 'auth.register',
+    actor: created.email,
+    actorId: created.id,
+    target: created.email,
+    detail: { selfRegistered: true },
+  };
   return res.status(201).json({ user: toAuthUser(created), domains: [] });
 });
 

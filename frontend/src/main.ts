@@ -15,6 +15,8 @@ import LoginView from './views/LoginView.vue'
 import AdminSettingsView from './views/AdminSettingsView.vue'
 import AdminUsersView from './views/AdminUsersView.vue'
 import AdminProvidersView from './views/AdminProvidersView.vue'
+import GlossaryView from './views/GlossaryView.vue'
+import AdminAuditView from './views/AdminAuditView.vue'
 import AccountView from './views/AccountView.vue'
 import { useAuth } from './composables/useAuth'
 import { brandingName } from './composables/useBranding'
@@ -98,6 +100,18 @@ const router = createRouter({
       name: 'AdminProviders',
       component: AdminProvidersView,
       meta: { admin: true, title: 'Identity providers' },
+    },
+    {
+      path: '/glossary',
+      name: 'Glossary',
+      component: GlossaryView,
+      meta: { title: 'Glossary' },
+    },
+    {
+      path: '/admin/audit',
+      name: 'AdminAudit',
+      component: AdminAuditView,
+      meta: { admin: true, title: 'Audit log' },
     },
     {
       path: '/account',
