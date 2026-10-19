@@ -168,7 +168,7 @@
                 type="password"
                 autocomplete="current-password"
                 required
-                class="w-full sm:w-96 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full sm:w-96 px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
 
@@ -183,7 +183,7 @@
                 autocomplete="new-password"
                 minlength="12"
                 required
-                class="w-full sm:w-96 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full sm:w-96 px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
 
@@ -198,7 +198,7 @@
                 autocomplete="new-password"
                 minlength="12"
                 required
-                class="w-full sm:w-96 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full sm:w-96 px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
               <p v-if="mismatch" class="mt-1 text-sm text-danger-700">
                 The two new passwords do not match.

@@ -27,7 +27,7 @@
               v-model="filters.actor"
               type="text"
               placeholder="someone@example.com"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @input="debouncedApply"
             />
           </div>
@@ -39,7 +39,7 @@
             <select
               id="audit-action"
               v-model="filters.action"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @change="applyFilters"
             >
               <option value="">All actions</option>
@@ -56,7 +56,7 @@
             <select
               id="audit-outcome"
               v-model="filters.outcome"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @change="applyFilters"
             >
               <option value="">Any</option>
@@ -73,7 +73,7 @@
               id="audit-from"
               v-model="filters.from"
               type="date"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @change="applyFilters"
             />
           </div>
@@ -86,7 +86,7 @@
               id="audit-to"
               v-model="filters.to"
               type="date"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @change="applyFilters"
             />
           </div>

@@ -1,6 +1,6 @@
 <template>
   <!-- The page's own title band: every view used to repeat this markup with small drifts. -->
-  <div class="bg-surface shadow-sm border-b border-gray-200">
+  <div class="bg-surface shadow-xs border-b border-gray-200">
     <div :class="containerClass">
       <div class="py-6">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

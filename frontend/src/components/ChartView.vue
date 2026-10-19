@@ -121,16 +121,16 @@ const rgb = (name: string, alpha?: number): string =>
   alpha === undefined ? `rgb(${token(name)})` : `rgb(${token(name)} / ${alpha})`;
 
 const themeColors = () => ({
-  primary: rgb('--color-primary-600'),
-  primarySoft: rgb('--color-primary-600', 0.18),
-  danger: rgb('--color-danger-500'),
-  dangerSoft: rgb('--color-danger-500', 0.18),
-  success: rgb('--color-success-500'),
-  warning: rgb('--color-warning-500'),
-  gray: rgb('--color-gray-400'),
-  grid: rgb('--color-gray-200'),
-  tick: rgb('--color-gray-500'),
-  text: rgb('--color-gray-700'),
+  primary: rgb('--ramp-primary-600'),
+  primarySoft: rgb('--ramp-primary-600', 0.18),
+  danger: rgb('--ramp-danger-500'),
+  dangerSoft: rgb('--ramp-danger-500', 0.18),
+  success: rgb('--ramp-success-500'),
+  warning: rgb('--ramp-warning-500'),
+  gray: rgb('--ramp-gray-400'),
+  grid: rgb('--ramp-gray-200'),
+  tick: rgb('--ramp-gray-500'),
+  text: rgb('--ramp-gray-700'),
   surface: rgb('--surface'),
 });
 

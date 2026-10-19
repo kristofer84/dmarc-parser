@@ -32,7 +32,7 @@
               <select
                 id="status-filter"
                 v-model="filters.status"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                 @change="applyFilters"
               >
                 <option v-for="option in statusOptions" :key="option.value" :value="option.value">
@@ -60,7 +60,7 @@
                   v-model="filters.search"
                   type="text"
                   placeholder="Search by attachment name, details, message UID, or report ID"
-                  class="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                  class="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                   @input="debouncedFilter"
                 />
               </div>
@@ -72,7 +72,7 @@
               <select
                 id="limit-filter"
                 v-model="filters.limit"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                 @change="applyFilters"
               >
                 <option :value="10">10</option>
@@ -146,7 +146,7 @@
       <!-- Error state -->
       <div v-if="error" class="mt-6 rounded-md bg-danger-50 p-4">
         <div class="flex">
-          <div class="flex-shrink-0">
+          <div class="shrink-0">
             <svg class="h-5 w-5 text-danger-400" viewBox="0 0 20 20" fill="currentColor">
               <path
                 fill-rule="evenodd"

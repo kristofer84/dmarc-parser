@@ -5,7 +5,7 @@
     :disabled="disabled || isLoading"
     :aria-label="label"
     :aria-busy="isLoading ? 'true' : undefined"
-    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
     @change="onChange"
   >
     <option value="">All domains</option>

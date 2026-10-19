@@ -4,7 +4,7 @@
     <span
       v-for="(slot, index) in slots"
       :key="index"
-      class="w-1 rounded-sm"
+      class="w-1 rounded-xs"
       :class="slot ? [HEIGHTS[slot.status], COLORS[slot.status]] : 'h-1 bg-gray-200'"
       :title="slot ? `${slot.status} — ${new Date(slot.runAt).toLocaleString()}` : 'no run recorded'"
     ></span>

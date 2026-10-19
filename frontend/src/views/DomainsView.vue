@@ -62,7 +62,7 @@
               v-model="newDomain"
               type="text"
               placeholder="example.com"
-              class="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @keyup.enter="addDomain"
             />
             <button
@@ -271,7 +271,7 @@
                     v-model="edit.dkimSelectors"
                     type="text"
                     placeholder="selector1, selector2"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                   />
                   <p class="mt-1 text-xs text-gray-500">
                     The <span class="font-mono">s=</span> tag of your DKIM signature — the name in
@@ -292,7 +292,7 @@
                     v-model="edit.expectedMx"
                     type="text"
                     placeholder="mx1.example.com, mx2.example.com"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                   />
                   <p class="mt-1 text-xs text-gray-500">
                     Optional. When it is set, published MX hosts that are not in this list are
@@ -324,7 +324,7 @@
                     v-model="edit.notes"
                     rows="2"
                     placeholder="Mailjet signs this domain"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                   ></textarea>
                   <p class="mt-1 text-xs text-gray-500">
                     Free text for you — for example which provider signs this domain. It is shown

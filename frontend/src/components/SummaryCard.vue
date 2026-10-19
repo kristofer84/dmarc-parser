@@ -2,7 +2,7 @@
   <div class="stat-card">
     <div class="stat-card-body">
       <div class="flex items-center">
-        <div class="flex-shrink-0">
+        <div class="shrink-0">
           <div class="w-8 h-8 flex items-center justify-center rounded-md" :class="iconBgClass">
             <component :is="iconComponent" class="w-5 h-5" :class="iconClass" />
           </div>
@@ -17,7 +17,7 @@
                 class="ml-2 flex items-baseline text-sm font-semibold"
                 :class="trendClass"
               >
-                <component :is="trendIcon" class="self-center flex-shrink-0 h-4 w-4" />
+                <component :is="trendIcon" class="self-center shrink-0 h-4 w-4" />
                 <span class="sr-only">{{ trend > 0 ? 'Increased' : 'Decreased' }} by</span>
                 {{ Math.abs(trend) }}%
               </div>

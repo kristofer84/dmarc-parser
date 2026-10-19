@@ -83,7 +83,7 @@
               v-model="filters.sourceIp"
               type="text"
               placeholder="203.0.113..."
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @input="debouncedFilter"
             />
           </div>
@@ -94,7 +94,7 @@
               v-model="filters.reporter"
               type="text"
               placeholder="outlook.com"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @input="debouncedFilter"
             />
           </div>
@@ -105,7 +105,7 @@
             <select
               id="verified-filter"
               v-model="filters.verified"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @change="applyFilters"
             >
               <option value="">All reports</option>
@@ -120,7 +120,7 @@
               v-model="filters.search"
               type="text"
               placeholder="Envelope from/to, subject, Message-ID, Authentication-Results..."
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @input="debouncedFilter"
             />
           </div>
@@ -130,7 +130,7 @@
               id="from-filter"
               v-model="filters.from"
               type="date"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @change="applyFilters"
             />
           </div>
@@ -140,7 +140,7 @@
               id="to-filter"
               v-model="filters.to"
               type="date"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               @change="applyFilters"
             />
           </div>

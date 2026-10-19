@@ -112,7 +112,7 @@
               <select
                 id="records-policy"
                 v-model="draft.dmarcPolicy"
-                class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-xs text-sm focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                 @change="schedule"
               >
                 <option value="">Server default</option>
@@ -133,7 +133,7 @@
                 id="records-rua"
                 v-model="draft.rua"
                 type="text"
-                class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm font-mono text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-xs font-mono text-sm focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                 @input="schedule"
               />
               <p class="mt-1 text-xs text-gray-500">
@@ -150,7 +150,7 @@
                 id="records-ruf"
                 v-model="draft.ruf"
                 type="text"
-                class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm font-mono text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-xs font-mono text-sm focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                 @input="schedule"
               />
               <p class="mt-1 text-xs text-gray-500">
@@ -165,7 +165,7 @@
               <select
                 id="records-mta-sts"
                 v-model="draft.mtaStsMode"
-                class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-xs text-sm focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                 @change="schedule"
               >
                 <option value="">Server default</option>

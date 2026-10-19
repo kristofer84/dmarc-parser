@@ -171,7 +171,7 @@
                 type="text"
                 required
                 placeholder="Company SSO"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
               <p class="mt-1 text-xs text-gray-500">Shown on the sign-in button.</p>
             </div>
@@ -186,7 +186,7 @@
                 type="url"
                 required
                 placeholder="https://login.example.com/realms/main"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
               <!-- Driven by the field rather than by the preset, so a template pasted into a
                    hand-written provider is caught the same way. -->
@@ -211,7 +211,7 @@
                 v-model="form.clientId"
                 type="text"
                 required
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
 
@@ -228,7 +228,7 @@
                 type="password"
                 autocomplete="new-password"
                 :placeholder="secretPlaceholder"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
               <p class="mt-1 text-xs text-gray-500">
                 <template v-if="editingSecretSet">
@@ -249,7 +249,7 @@
                 v-model="form.scopes"
                 type="text"
                 placeholder="openid profile email"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
               <p class="mt-1 text-xs text-gray-500">
                 Space-separated. <span class="font-mono">openid</span> is always sent. Leave blank
@@ -269,7 +269,7 @@
                 v-model="form.defaultDomains"
                 type="text"
                 placeholder="example.com, example.org"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
               <p class="mt-1 text-xs text-gray-500">
                 Comma-separated domains automatically assigned to users provisioned by this

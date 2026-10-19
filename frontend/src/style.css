@@ -1,6 +1,85 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/*
+ * Tailwind 4.
+ *
+ * The colour tokens are `@theme inline` entries that point at runtime ramps, so the `dark`
+ * class still re-themes the whole app by redefining one block, and a deployment can still
+ * override a value at runtime (--accent) without a rebuild.
+ *
+ * The ramps are named --ramp-*, not --color-*: in v4 Tailwind's own tokens ARE --color-*, so
+ * a ramp called --color-gray-50 mapped to `rgb(var(--color-gray-50))` would define a variable
+ * in terms of itself.
+ *
+ * `inline` is required, not cosmetic: without it Tailwind resolves the value at build time and
+ * the runtime override stops working.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-gray-50: rgb(var(--ramp-gray-50));
+  --color-gray-100: rgb(var(--ramp-gray-100));
+  --color-gray-200: rgb(var(--ramp-gray-200));
+  --color-gray-300: rgb(var(--ramp-gray-300));
+  --color-gray-400: rgb(var(--ramp-gray-400));
+  --color-gray-500: rgb(var(--ramp-gray-500));
+  --color-gray-600: rgb(var(--ramp-gray-600));
+  --color-gray-700: rgb(var(--ramp-gray-700));
+  --color-gray-800: rgb(var(--ramp-gray-800));
+  --color-gray-900: rgb(var(--ramp-gray-900));
+  --color-gray-950: rgb(var(--ramp-gray-950));
+  --color-primary-50: rgb(var(--ramp-primary-50));
+  --color-primary-100: rgb(var(--ramp-primary-100));
+  --color-primary-200: rgb(var(--ramp-primary-200));
+  --color-primary-300: rgb(var(--ramp-primary-300));
+  --color-primary-400: rgb(var(--ramp-primary-400));
+  --color-primary-500: rgb(var(--ramp-primary-500));
+  --color-primary-600: rgb(var(--ramp-primary-600));
+  --color-primary-700: rgb(var(--ramp-primary-700));
+  --color-primary-800: rgb(var(--ramp-primary-800));
+  --color-primary-900: rgb(var(--ramp-primary-900));
+  --color-success-50: rgb(var(--ramp-success-50));
+  --color-success-100: rgb(var(--ramp-success-100));
+  --color-success-200: rgb(var(--ramp-success-200));
+  --color-success-300: rgb(var(--ramp-success-300));
+  --color-success-400: rgb(var(--ramp-success-400));
+  --color-success-500: rgb(var(--ramp-success-500));
+  --color-success-600: rgb(var(--ramp-success-600));
+  --color-success-700: rgb(var(--ramp-success-700));
+  --color-success-800: rgb(var(--ramp-success-800));
+  --color-success-900: rgb(var(--ramp-success-900));
+  --color-warning-50: rgb(var(--ramp-warning-50));
+  --color-warning-100: rgb(var(--ramp-warning-100));
+  --color-warning-200: rgb(var(--ramp-warning-200));
+  --color-warning-300: rgb(var(--ramp-warning-300));
+  --color-warning-400: rgb(var(--ramp-warning-400));
+  --color-warning-500: rgb(var(--ramp-warning-500));
+  --color-warning-600: rgb(var(--ramp-warning-600));
+  --color-warning-700: rgb(var(--ramp-warning-700));
+  --color-warning-800: rgb(var(--ramp-warning-800));
+  --color-warning-900: rgb(var(--ramp-warning-900));
+  --color-danger-50: rgb(var(--ramp-danger-50));
+  --color-danger-100: rgb(var(--ramp-danger-100));
+  --color-danger-200: rgb(var(--ramp-danger-200));
+  --color-danger-300: rgb(var(--ramp-danger-300));
+  --color-danger-400: rgb(var(--ramp-danger-400));
+  --color-danger-500: rgb(var(--ramp-danger-500));
+  --color-danger-600: rgb(var(--ramp-danger-600));
+  --color-danger-700: rgb(var(--ramp-danger-700));
+  --color-danger-800: rgb(var(--ramp-danger-800));
+  --color-danger-900: rgb(var(--ramp-danger-900));
+  --color-accent: rgb(var(--accent));
+  --color-accent-foreground: rgb(var(--accent-fg));
+  --color-surface: rgb(var(--surface));
+  --color-surface-muted: rgb(var(--surface-muted));
+
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-pop: 0 8px 24px -6px rgb(0 0 0 / 0.18);
+  --radius-card: 0.625rem;
+
+  --font-sans: 'InterVariable', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace;
+}
 
 /*
  * Design tokens.
@@ -17,61 +96,61 @@
     --surface: 255 255 255;
     --surface-muted: 249 250 251;
 
-    --color-gray-50: 249 250 251;
-    --color-gray-100: 243 244 246;
-    --color-gray-200: 229 231 235;
-    --color-gray-300: 209 213 219;
-    --color-gray-400: 156 163 175;
-    --color-gray-500: 107 114 128;
-    --color-gray-600: 75 85 99;
-    --color-gray-700: 55 65 81;
-    --color-gray-800: 31 41 55;
-    --color-gray-900: 17 24 39;
-    --color-gray-950: 3 7 18;
+    --ramp-gray-50: 249 250 251;
+    --ramp-gray-100: 243 244 246;
+    --ramp-gray-200: 229 231 235;
+    --ramp-gray-300: 209 213 219;
+    --ramp-gray-400: 156 163 175;
+    --ramp-gray-500: 107 114 128;
+    --ramp-gray-600: 75 85 99;
+    --ramp-gray-700: 55 65 81;
+    --ramp-gray-800: 31 41 55;
+    --ramp-gray-900: 17 24 39;
+    --ramp-gray-950: 3 7 18;
 
-    --color-primary-50: 238 242 255;
-    --color-primary-100: 224 231 255;
-    --color-primary-200: 199 210 254;
-    --color-primary-300: 165 180 252;
-    --color-primary-400: 129 140 248;
-    --color-primary-500: 99 102 241;
-    --color-primary-600: 79 70 229;
-    --color-primary-700: 67 56 202;
-    --color-primary-800: 55 48 163;
-    --color-primary-900: 49 46 129;
+    --ramp-primary-50: 238 242 255;
+    --ramp-primary-100: 224 231 255;
+    --ramp-primary-200: 199 210 254;
+    --ramp-primary-300: 165 180 252;
+    --ramp-primary-400: 129 140 248;
+    --ramp-primary-500: 99 102 241;
+    --ramp-primary-600: 79 70 229;
+    --ramp-primary-700: 67 56 202;
+    --ramp-primary-800: 55 48 163;
+    --ramp-primary-900: 49 46 129;
 
-    --color-success-50: 240 253 244;
-    --color-success-100: 220 252 231;
-    --color-success-200: 187 247 208;
-    --color-success-300: 134 239 172;
-    --color-success-400: 74 222 128;
-    --color-success-500: 34 197 94;
-    --color-success-600: 22 163 74;
-    --color-success-700: 21 128 61;
-    --color-success-800: 22 101 52;
-    --color-success-900: 20 83 45;
+    --ramp-success-50: 240 253 244;
+    --ramp-success-100: 220 252 231;
+    --ramp-success-200: 187 247 208;
+    --ramp-success-300: 134 239 172;
+    --ramp-success-400: 74 222 128;
+    --ramp-success-500: 34 197 94;
+    --ramp-success-600: 22 163 74;
+    --ramp-success-700: 21 128 61;
+    --ramp-success-800: 22 101 52;
+    --ramp-success-900: 20 83 45;
 
-    --color-warning-50: 255 251 235;
-    --color-warning-100: 254 243 199;
-    --color-warning-200: 253 230 138;
-    --color-warning-300: 252 211 77;
-    --color-warning-400: 251 191 36;
-    --color-warning-500: 245 158 11;
-    --color-warning-600: 217 119 6;
-    --color-warning-700: 180 83 9;
-    --color-warning-800: 146 64 14;
-    --color-warning-900: 120 53 15;
+    --ramp-warning-50: 255 251 235;
+    --ramp-warning-100: 254 243 199;
+    --ramp-warning-200: 253 230 138;
+    --ramp-warning-300: 252 211 77;
+    --ramp-warning-400: 251 191 36;
+    --ramp-warning-500: 245 158 11;
+    --ramp-warning-600: 217 119 6;
+    --ramp-warning-700: 180 83 9;
+    --ramp-warning-800: 146 64 14;
+    --ramp-warning-900: 120 53 15;
 
-    --color-danger-50: 254 242 242;
-    --color-danger-100: 254 226 226;
-    --color-danger-200: 254 202 202;
-    --color-danger-300: 252 165 165;
-    --color-danger-400: 248 113 113;
-    --color-danger-500: 239 68 68;
-    --color-danger-600: 220 38 38;
-    --color-danger-700: 185 28 28;
-    --color-danger-800: 153 27 27;
-    --color-danger-900: 127 29 29;
+    --ramp-danger-50: 254 242 242;
+    --ramp-danger-100: 254 226 226;
+    --ramp-danger-200: 254 202 202;
+    --ramp-danger-300: 252 165 165;
+    --ramp-danger-400: 248 113 113;
+    --ramp-danger-500: 239 68 68;
+    --ramp-danger-600: 220 38 38;
+    --ramp-danger-700: 185 28 28;
+    --ramp-danger-800: 153 27 27;
+    --ramp-danger-900: 127 29 29;
 
     color-scheme: light;
   }
@@ -80,17 +159,17 @@
     --surface: 22 30 46;
     --surface-muted: 11 17 32;
 
-    --color-gray-50: 11 17 32;
-    --color-gray-100: 22 30 46;
-    --color-gray-200: 39 50 71;
-    --color-gray-300: 58 71 96;
-    --color-gray-400: 125 139 163;
-    --color-gray-500: 148 163 184;
-    --color-gray-600: 178 190 208;
-    --color-gray-700: 203 213 225;
-    --color-gray-800: 226 232 240;
-    --color-gray-900: 241 245 249;
-    --color-gray-950: 255 255 255;
+    --ramp-gray-50: 11 17 32;
+    --ramp-gray-100: 22 30 46;
+    --ramp-gray-200: 39 50 71;
+    --ramp-gray-300: 58 71 96;
+    --ramp-gray-400: 125 139 163;
+    --ramp-gray-500: 148 163 184;
+    --ramp-gray-600: 178 190 208;
+    --ramp-gray-700: 203 213 225;
+    --ramp-gray-800: 226 232 240;
+    --ramp-gray-900: 241 245 249;
+    --ramp-gray-950: 255 255 255;
 
     /* The semantic ramps are inverted too, and for two separate reasons that only became
        visible when they were measured rather than eyeballed:
@@ -102,34 +181,34 @@
            light-on-light: 1.20:1, which is invisible rather than merely dim.
        400 and 500 stay untouched: those are the solid bg-*-500 chips and status dots, which
        read correctly on either surface and are not carrying small text. */
-    --color-warning-50: 48 32 10;
-    --color-warning-100: 120 53 15;
-    --color-warning-200: 146 64 14;
-    --color-warning-300: 180 83 9;
-    --color-warning-600: 245 158 11;
-    --color-warning-700: 251 191 36;
-    --color-warning-800: 253 230 138;
+    --ramp-warning-50: 48 32 10;
+    --ramp-warning-100: 120 53 15;
+    --ramp-warning-200: 146 64 14;
+    --ramp-warning-300: 180 83 9;
+    --ramp-warning-600: 245 158 11;
+    --ramp-warning-700: 251 191 36;
+    --ramp-warning-800: 253 230 138;
 
-    --color-danger-50: 60 22 22;
-    --color-danger-100: 127 29 29;
-    --color-danger-200: 153 27 27;
-    --color-danger-300: 185 28 28;
-    --color-danger-600: 239 68 68;
-    --color-danger-700: 248 113 113;
-    --color-danger-800: 254 202 202;
+    --ramp-danger-50: 60 22 22;
+    --ramp-danger-100: 127 29 29;
+    --ramp-danger-200: 153 27 27;
+    --ramp-danger-300: 185 28 28;
+    --ramp-danger-600: 239 68 68;
+    --ramp-danger-700: 248 113 113;
+    --ramp-danger-800: 254 202 202;
 
-    --color-success-50: 20 48 30;
-    --color-success-100: 20 83 45;
-    --color-success-200: 22 101 52;
-    --color-success-300: 21 128 61;
-    --color-success-600: 34 197 94;
-    --color-success-700: 74 222 128;
-    --color-success-800: 187 247 208;
+    --ramp-success-50: 20 48 30;
+    --ramp-success-100: 20 83 45;
+    --ramp-success-200: 22 101 52;
+    --ramp-success-300: 21 128 61;
+    --ramp-success-600: 34 197 94;
+    --ramp-success-700: 74 222 128;
+    --ramp-success-800: 187 247 208;
 
     /* primary is deliberately not inverted: bg-primary-600 is a button background with white
        text, so lightening it would break the button rather than fix it. */
-    --color-primary-100: 49 46 129;
-    --color-primary-800: 199 210 254;
+    --ramp-primary-100: 49 46 129;
+    --ramp-primary-800: 199 210 254;
 
     color-scheme: dark;
   }
@@ -152,99 +231,101 @@
     @apply outline-none ring-2 ring-primary-500 ring-offset-2 ring-offset-gray-50;
   }
 
+  /* Tailwind 4 preflight no longer sets `cursor: pointer` on buttons (it followed the
+     browser default), and this UI has 78 of them. Restoring it once beats 78 class edits. */
+  button:not(:disabled), [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
   /* A sticky translucent header needs the scrollbar accounted for on macOS/iOS. */
   html {
     scrollbar-gutter: stable;
   }
 }
 
-@layer components {
-  .btn {
-    @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
-  }
-  
-  .btn-primary {
-    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
-  }
-  
-  .btn-secondary {
-    @apply btn bg-surface text-gray-700 border-gray-300 hover:bg-gray-100 focus:ring-primary-500;
-  }
-  
-  .card {
-    @apply bg-surface overflow-hidden shadow-card rounded-card border border-gray-200;
-  }
-  
-  .card-header {
-    @apply px-4 py-5 sm:px-6 border-b border-gray-200;
-  }
-  
-  .card-body {
-    @apply px-4 py-5 sm:p-6;
-  }
-  
-  .stat-card {
-    @apply card;
-  }
-  
-  .stat-card-body {
-    @apply card-body;
-  }
-  
-  .stat-value {
-    @apply text-2xl font-semibold text-gray-900;
-  }
-  
-  .stat-label {
-    @apply text-sm font-medium text-gray-500;
-  }
-  
-  .table {
-    @apply min-w-full divide-y divide-gray-200;
-  }
-  
-  .table-header {
-    @apply bg-gray-50;
-  }
-  
-  /* Sticky so a long report list keeps its column meanings while scrolling. */
-  .table-header-cell {
-    @apply sticky top-0 z-10 bg-gray-50 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700;
-  }
-  
-  .table-body {
-    @apply bg-surface divide-y divide-gray-200;
-  }
-  
-  .table-row {
-    @apply hover:bg-gray-50 cursor-pointer;
-  }
-  
-  .table-cell {
-    @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900;
-  }
-  
-  .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
-  }
-  
-  .badge-success {
-    @apply badge bg-success-100 text-success-800;
-  }
-  
-  .badge-warning {
-    @apply badge bg-warning-100 text-warning-800;
-  }
-  
-  .badge-danger {
-    @apply badge bg-danger-100 text-danger-800;
-  }
-  
-  .badge-gray {
-    @apply badge bg-gray-100 text-gray-800;
-  }
+@utility btn {
+  @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-xs focus:outline-hidden focus:ring-2 focus:ring-offset-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
 }
 
+@utility btn-primary {
+  @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
+}
+
+@utility btn-secondary {
+  @apply btn bg-surface text-gray-700 border-gray-300 hover:bg-gray-100 focus:ring-primary-500;
+}
+
+@utility card {
+  @apply bg-surface overflow-hidden shadow-card rounded-card border border-gray-200;
+}
+
+@utility card-header {
+  @apply px-4 py-5 sm:px-6 border-b border-gray-200;
+}
+
+@utility card-body {
+  @apply px-4 py-5 sm:p-6;
+}
+
+@utility stat-card {
+  @apply card;
+}
+
+@utility stat-card-body {
+  @apply card-body;
+}
+
+@utility stat-value {
+  @apply text-2xl font-semibold text-gray-900;
+}
+
+@utility stat-label {
+  @apply text-sm font-medium text-gray-500;
+}
+
+@utility table {
+  @apply min-w-full divide-y divide-gray-200;
+}
+
+@utility table-header {
+  @apply bg-gray-50;
+}
+
+@utility table-header-cell {
+  @apply sticky top-0 z-10 bg-gray-50 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700;
+}
+
+@utility table-body {
+  @apply bg-surface divide-y divide-gray-200;
+}
+
+@utility table-row {
+  @apply hover:bg-gray-50 cursor-pointer;
+}
+
+@utility table-cell {
+  @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900;
+}
+
+@utility badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+@utility badge-success {
+  @apply badge bg-success-100 text-success-800;
+}
+
+@utility badge-warning {
+  @apply badge bg-warning-100 text-warning-800;
+}
+
+@utility badge-danger {
+  @apply badge bg-danger-100 text-danger-800;
+}
+
+@utility badge-gray {
+  @apply badge bg-gray-100 text-gray-800;
+}
 @layer utilities {
   /* Aligned figures for IPs, ports, counts and dates. */
   .nums {

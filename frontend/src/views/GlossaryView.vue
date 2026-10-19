@@ -36,7 +36,7 @@
                 v-model="query"
                 type="search"
                 placeholder="alignment, rua, selector, MTA-STS, reportAuthenticated…"
-                class="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
             <p class="mt-1 text-xs text-gray-500">
@@ -50,7 +50,7 @@
             <select
               id="glossary-category"
               v-model="category"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
             >
               <option value="all">All categories ({{ GLOSSARY.length }})</option>
               <option v-for="group in GLOSSARY_CATEGORIES" :key="group.id" :value="group.id">

@@ -24,7 +24,7 @@
                 v-model="form.email"
                 type="email"
                 required
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
             <div>
@@ -33,7 +33,7 @@
                 id="new-name"
                 v-model="form.name"
                 type="text"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
             <div>
@@ -41,7 +41,7 @@
               <select
                 id="new-role"
                 v-model="form.role"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               >
                 <option value="user">User (assigned domains)</option>
                 <option value="admin">Administrator (everything)</option>
@@ -57,7 +57,7 @@
                 type="password"
                 required
                 minlength="12"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
               <p class="mt-1 text-xs text-gray-500">At least 12 characters.</p>
             </div>
@@ -173,7 +173,7 @@
                 v-model="newDomain"
                 type="text"
                 placeholder="example.com"
-                class="w-56 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                class="w-56 px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
             <button class="btn btn-secondary" @click="addDomain">Add</button>
@@ -210,7 +210,7 @@
               v-model="newPassword"
               type="password"
               minlength="12"
-              class="w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              class="w-64 px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
             />
           </div>
           <button class="btn btn-primary" :disabled="resettingPassword" @click="resetPassword">

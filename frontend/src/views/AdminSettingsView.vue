@@ -73,7 +73,7 @@
                     :min="setting.min"
                     :max="setting.max"
                     :disabled="!isAdmin"
-                    class="w-28 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                    class="w-28 px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                   />
 
                   <!-- secret: the API returns no value, so the box is always blank and typing replaces -->
@@ -84,7 +84,7 @@
                     autocomplete="new-password"
                     :disabled="!isAdmin"
                     :placeholder="setting.isSet ? '•••• stored — type to replace' : 'Not set'"
-                    class="w-56 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                    class="w-56 px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                   />
 
                   <!-- string -->
@@ -93,7 +93,7 @@
                     v-model="draft[setting.key]"
                     type="text"
                     :disabled="!isAdmin"
-                    class="w-56 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                    class="w-56 px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                   />
 
                   <button

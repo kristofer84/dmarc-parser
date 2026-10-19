@@ -3,12 +3,12 @@
     <a href="#main" class="skip-link">Skip to main content</a>
 
     <!-- Navigation -->
-    <nav v-if="$route.name !== 'Login'" class="bg-surface shadow-sm border-b border-gray-200">
+    <nav v-if="$route.name !== 'Login'" class="bg-surface shadow-xs border-b border-gray-200">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16 min-w-0 gap-4">
           <div class="flex min-w-0">
             <!-- Logo -->
-            <div class="flex-shrink-0 flex items-center">
+            <div class="shrink-0 flex items-center">
               <router-link to="/" class="flex items-center space-x-2">
                 <BrandMark class="w-8 h-8 text-accent" />
                 <span class="text-xl font-bold text-gray-900">{{ branding.name }}</span>
@@ -75,7 +75,7 @@
           </div>
 
           <!-- Right side -->
-          <div class="flex flex-shrink-0 items-center gap-3 lg:gap-4">
+          <div class="flex shrink-0 items-center gap-3 lg:gap-4">
             <!-- Health is a dot only: the wording sits in the title and an sr-only span,
                  so it can never widen the row. -->
             <div class="hidden lg:flex items-center" :title="healthLabel">
@@ -89,7 +89,7 @@
             <!-- Theme -->
             <button
               type="button"
-              class="inline-flex items-center justify-center rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              class="inline-flex items-center justify-center rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-primary-500"
               :aria-label="themeLabel"
               :title="themeLabel"
               @click="setNextTheme"
@@ -119,7 +119,7 @@
             <div class="lg:hidden">
               <button
                 @click="mobileMenuOpen = !mobileMenuOpen"
-                class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500"
+                class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-hidden focus:ring-2 focus:ring-inset focus:ring-primary-500"
                 :aria-expanded="mobileMenuOpen"
                 aria-controls="mobile-menu"
                 :aria-label="mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'"
@@ -162,7 +162,7 @@
     </main>
 
     <!-- Global loading overlay -->
-    <div v-if="globalLoading" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div v-if="globalLoading" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div class="bg-surface rounded-card p-6 flex items-center space-x-3">
         <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
         <span class="text-gray-700">Loading...</span>
@@ -370,6 +370,9 @@ watch(
 </script>
 
 <style scoped>
+/* v4: a scoped block is its own compilation unit, so it must be pointed at the theme. */
+@reference "./style.css";
+
 .nav-link {
   @apply inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors duration-200;
 }
