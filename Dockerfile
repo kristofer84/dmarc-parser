@@ -19,6 +19,20 @@ COPY frontend/ ./
 # vite build only: the type check runs in CI where it can fail the build cheaply.
 RUN npm run build:docker
 
+# ---------------------------------------------------------------- prisma client
+# Generated on the BUILD platform, not the target one. Prisma 7's schema engine run under
+# QEMU (the arm64 leg of a multi-arch build) truncated its own JSON output - "Unable to parse
+# JSON ... [Context: getDmmf]" - and failed the publish on 2026-10-19 while amd64 succeeded.
+# The generated client is plain JS/TS: with a driver adapter there is no native query engine
+# to match the target platform, so generating it once natively is correct and much faster.
+FROM --platform=$BUILDPLATFORM node:26-slim AS prisma-client
+WORKDIR /app
+COPY backend/package*.json ./
+RUN npm ci
+COPY backend/prisma ./prisma
+COPY backend/prisma.config.ts ./
+RUN npx prisma generate
+
 # ---------------------------------------------------------------- backend build
 FROM node:26-slim AS backend
 WORKDIR /app
@@ -30,8 +44,10 @@ COPY backend/tsconfig.json ./
 RUN npm ci
 COPY backend/src ./src
 COPY backend/prisma ./prisma
-COPY backend/prisma.config.ts ./
-RUN npx prisma generate && npm run build
+COPY --from=prisma-client /app/src/generated ./src/generated
+# Fail here rather than publish an image that cannot start.
+RUN test -f src/generated/prisma/client.ts
+RUN npm run build
 
 # ---------------------------------------------------------------- runtime
 FROM node:26-slim AS production
