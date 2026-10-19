@@ -625,6 +625,88 @@ assigned.
 
 ---
 
+## Compliance vocabulary
+
+Terms an auditor uses, plus the mechanisms this app offers as evidence. The clause-by-clause
+mapping, the data inventory and — more importantly — the honest gaps are in [nis2.md](nis2.md).
+This section is only the vocabulary.
+
+### NIS2
+
+Directive (EU) 2022/2555. It obliges **organisations**, never software: risk management (Art. 21),
+incident reporting (Art. 23: 24 h early warning, 72 h notification, one month final report), and
+management accountability (Art. 20). Transposition was due 2024-10-17 and is national, so the
+registration portal, the authority and the deadlines are in your member state's law. Scope is
+medium and above (≥50 staff or >€10 m turnover) across 18 sectors, with some digital, DNS and
+trust-service providers in scope regardless of size. Fines reach €10 m or 2 % for essential
+entities, €7 m or 1.4 % for important ones (Art. 34).
+
+`dmarc-parser` is not an in-scope entity. Its *users* usually are, and the project's contribution
+is evidence, not compliance: `SECURITY.md` and Dependabot for Art. 21(2)(e), `deploy/README.md`
+§6–§8 for (c), passkeys for (j), and the audit trail below.
+
+### Audit trail
+
+`backend/src/services/audit.ts`, `backend/src/middleware/audit.ts`, `backend/src/routes/audit.ts`,
+model `AuditEvent` → table `audit_events`. Routes set `req.audit`; the middleware writes one row on
+`finish`, taking the outcome from the status code, so a failure cannot be recorded as a success.
+Sign-ins (password, passkey, OIDC — failures included), lockouts, password/passkey changes, and
+every user, domain, provider, setting and retention change are covered; an unlabelled mutation
+falls back to `http.<verb> <route>`. Credential-shaped detail keys are redacted at write time and
+no code updates a row. Read at *More → Audit log*; prune via `data.auditRetentionDays`.
+
+### Evidence export
+
+`GET /api/audit/export?format=csv|json`. Returns the filtered rows plus `X-Audit-Digest`, a
+SHA-256 of the body (JSON also embeds it, scoped to the `events` array). Refused above 20,000 rows
+rather than truncated. The export itself is audited (`audit.export`, refusals too). The digest
+proves **the file** was not altered after export; it says nothing about the database.
+
+### Data retention
+
+`backend/src/services/retention.ts` and the `data.*` settings. Aggregate reports are anchored on
+the report period `endDate`; forensic reports on `arrivalDate`, falling back to `createdAt`; audit
+rows on `createdAt`. `0` = keep forever (the default for both report kinds). A preview endpoint
+counts what a run would delete; runs fire 90 s after start and every 6 h, serialised with the
+manual run. Records cascade with their report; processing logs keep their rows with a null
+`reportId`. Irreversible — and a backup taken earlier still contains the rows.
+
+### Tamper evidence
+
+The audit table is append-only *by application design*, not cryptographically. No code updates or
+deletes a row except the retention prune (itself audited), but anyone with the database file can
+edit it with `sqlite3` and nothing would notice. A hash chain was considered and deliberately not
+built: pruning breaks the chain at the boundary, and a verifier that cannot verify is worse than a
+stated limit. Periodic exports to storage you cannot rewrite are the substitute.
+
+### MFA
+
+Art. 21(2)(j). Passkeys (`services/webauthn.ts`) are origin-bound and additive to the password;
+OIDC delegates the factor to the provider and is identity-only. Neither is enforced — an account
+can exist with a password alone — so "available" must not be reported as "enforced".
+
+### SBOM
+
+`.github/workflows/publish.yml` builds with `sbom: true`, attaching a bill-of-materials attestation
+to the pushed image rather than leaving a file in the repo. Inspect an image with
+`docker buildx imagetools inspect --format "{{json .SBOM}}" <image>`. One input to Art. 21(2)(d);
+not a vulnerability scan.
+
+### Build provenance
+
+`actions/attest-build-provenance` in the same workflow. Verify with
+`gh attestation verify oci://ghcr.io/kristofer84/dmarc-parser:latest --repo kristofer84/dmarc-parser`;
+it exits non-zero when the signature or subject digest does not match, which is what makes it
+usable as a check rather than a formality.
+
+### Supply-chain security
+
+Art. 21(2)(d). On this side: committed lockfiles, `npm ci`, CI-gated publishing, Dependabot for npm
+(backend and frontend), GitHub Actions and the Dockerfile, plus the two attestations above. It says
+nothing about your other suppliers.
+
+---
+
 ## Keeping this document honest
 
 - If a term describes app behaviour, it names the file that implements it. If you change the

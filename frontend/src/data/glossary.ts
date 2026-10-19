@@ -20,7 +20,8 @@ export type GlossaryCategory =
   | 'reporting'
   | 'dns'
   | 'delivery'
-  | 'operations';
+  | 'operations'
+  | 'compliance';
 
 export interface GlossaryTerm {
   /** Kebab slug, used as the DOM id so /glossary#dkim-selector deep-links. */
@@ -82,6 +83,11 @@ export const GLOSSARY_CATEGORIES: ReadonlyArray<{
     id: 'operations',
     label: 'This app',
     description: 'The console own vocabulary: checks, suggestions, logs and scoping.',
+  },
+  {
+    id: 'compliance',
+    label: 'Compliance',
+    description: 'The vocabulary an auditor uses, and the limits of what this app can evidence.',
   },
 ];
 
@@ -997,5 +1003,139 @@ export const GLOSSARY: GlossaryTerm[] = [
       'This is why "process the mailbox again" is a safe operation and why the same report showing up twice usually means two reporters used the same report_id. A changed forensic report - a corrected resend - is a different key and will be stored separately.',
     reference: null,
     related: ['aggregate-report', 'forensic-report', 'processing-log'],
+  },
+  {
+    id: 'nis2',
+    term: 'NIS2',
+    expansion: 'Directive (EU) 2022/2555',
+    aliases: ['NIS2 directive', '2022/2555', 'cyber risk directive'],
+    category: 'compliance',
+    short:
+      'The EU directive that obliges certain organisations - never software - to manage cyber risk, report incidents and answer for it at board level.',
+    detail:
+      'Transposition was due by 17 October 2024 and is national, so the registration portal, the authority and the deadlines live in your member state law. The size rule is medium and above (at least 50 staff or more than EUR 10m turnover) across 18 sectors, with some digital providers, DNS and trust services in scope regardless of size. Article 21 lists the risk measures, Article 23 the 24-hour early warning, 72-hour notification and one-month final report.',
+    whyItMatters:
+      'This app is not an entity under NIS2 and nothing in it certifies compliance. What it gives an operator is evidence for a few clauses: vulnerability handling (SECURITY.md, Dependabot, SBOM), backup and a restore drill, MFA through passkeys, and the audit trail. docs/nis2.md maps every clause and lists what is missing - read the missing list before quoting anything from it to an auditor.',
+    reference: 'Directive (EU) 2022/2555',
+    related: ['audit-trail', 'evidence-export', 'sbom', 'build-provenance', 'mfa', 'data-retention'],
+  },
+  {
+    id: 'audit-trail',
+    term: 'Audit trail',
+    expansion: null,
+    aliases: ['audit log', 'audit_events', 'who changed what'],
+    category: 'compliance',
+    short:
+      'The append-only record of who did what, from where, and whether it worked.',
+    detail:
+      'Every state-changing request writes one row to audit_events when the response finishes, so a failed request cannot be recorded as a success. Sign-ins of all three kinds (failures included), lockouts, password and passkey changes, and every user, domain, provider, setting and retention change are covered; a route that changes something without a label falls back to its HTTP verb and path rather than going unrecorded. Passwords, secrets and tokens are redacted at write time, and no code updates a row after it is written.',
+    whyItMatters:
+      'Read it under More -> Audit log. It answers questions a log on stdout cannot once the container is replaced: who disabled that account, and did anyone shorten the retention window before the evidence expired. Rows are kept for data.auditRetentionDays (365 by default).',
+    reference: 'NIS2 Art. 21(2)(b)',
+    related: ['evidence-export', 'data-retention', 'tamper-evidence'],
+  },
+  {
+    id: 'evidence-export',
+    term: 'Evidence export',
+    expansion: null,
+    aliases: ['audit export', 'X-Audit-Digest', 'audit csv'],
+    category: 'compliance',
+    short:
+      'The CSV or JSON copy of the audit trail, carrying a digest of exactly the rows it contains.',
+    detail:
+      'The export endpoint returns CSV or JSON with X-Audit-Digest, a SHA-256 of the body; the JSON form also embeds the digest scoped to its events array. An export above 20,000 rows is refused rather than truncated, because a silently short export looks complete. Exporting is itself recorded as audit.export, including a refused attempt.',
+    whyItMatters:
+      'This is the artifact you keep, not the database. The digest shows the file was not altered after it left the app - check it with sha256sum against the header before filing it. Store copies off the host: there is no WORM storage here.',
+    reference: null,
+    related: ['audit-trail', 'tamper-evidence', 'data-retention'],
+  },
+  {
+    id: 'data-retention',
+    term: 'Data retention',
+    expansion: null,
+    aliases: ['retention policy', 'pruning', 'data.auditRetentionDays'],
+    category: 'compliance',
+    short:
+      'The three settings that decide when reports and audit rows are deleted.',
+    detail:
+      'data.reportRetentionDays anchors on the report period end, data.forensicRetentionDays on arrival (falling back to the time the row was stored), and data.auditRetentionDays on the row timestamp. 0 means keep forever, which is the default for both report kinds. A preview shows how many rows each rule would delete before anything happens; runs happen shortly after start and every six hours.',
+    whyItMatters:
+      'Deletion is irreversible, and a backup taken earlier still contains the rows - so a retention period is only real if backups expire on the same schedule. Prune forensic reports first if you prune at all: they can contain the reported message itself, which is third-party content.',
+    reference: 'NIS2 Art. 21(2)(a)',
+    related: ['audit-trail', 'forensic-report', 'evidence-export'],
+  },
+  {
+    id: 'tamper-evidence',
+    term: 'Tamper evidence',
+    expansion: null,
+    aliases: ['hash chain', 'append-only', 'immutable log'],
+    category: 'compliance',
+    short:
+      'Whether a log can be shown not to have been altered - and this app deliberately has no hash chain.',
+    detail:
+      'The audit table is append-only by application design: nothing updates or deletes a row except the retention prune, and that prune is itself audited. That is not the same as tamper-evident. Anyone holding the database file can rewrite it with sqlite3 and nothing would notice. A hash chain was considered and not built, because retention pruning breaks the chain at the boundary and a verifier that cannot verify is worse than an honest limit.',
+    whyItMatters:
+      'Say this precisely when it matters: an export digest proves the file you hold was not altered after export; it says nothing about the database. If you need more, ship exports to storage you cannot rewrite, on a schedule.',
+    reference: null,
+    related: ['audit-trail', 'evidence-export'],
+  },
+  {
+    id: 'mfa',
+    term: 'MFA',
+    expansion: 'Multi-factor authentication',
+    aliases: ['two-factor', '2FA', 'passkey', 'second factor'],
+    category: 'compliance',
+    short:
+      'A second factor at sign-in: a passkey here, or the identity provider own MFA through OIDC.',
+    detail:
+      'Passkeys are WebAuthn credentials bound to the exact public origin, added alongside the password so a lost device never locks an account out. OIDC delegates the factor to the provider - this app reads identity only and never treats a claim as authority. Neither is enforced: an account can exist with a password alone.',
+    whyItMatters:
+      'Art 21(2)(j) names MFA explicitly. Available is not the same as enforced, so an operator has to set the policy and keep the recovery path working: password sign-in plus an administrator clearing passkeys from the Users screen.',
+    reference: 'NIS2 Art. 21(2)(j)',
+    related: ['nis2', 'audit-trail'],
+  },
+  {
+    id: 'sbom',
+    term: 'SBOM',
+    expansion: 'Software bill of materials',
+    aliases: ['bill of materials', 'dependency list', 'CycloneDX'],
+    category: 'compliance',
+    short: 'The dependency list of a published image, attested alongside it.',
+    detail:
+      'The publish workflow builds with sbom: true, which attaches an SBOM attestation to the pushed image instead of leaving a file in the repository that describes a commit nobody pulled. Inspect it from the artifact with docker buildx imagetools inspect --format "{{json .SBOM}}" <image>.',
+    whyItMatters:
+      'It answers what is in this and is any of it known-bad from the thing you actually run. It is one input to supply-chain questions; it is not a vulnerability scan and not an assessment of your other suppliers.',
+    reference: 'NIS2 Art. 21(2)(d)',
+    related: ['build-provenance', 'supply-chain-security', 'nis2'],
+  },
+  {
+    id: 'build-provenance',
+    term: 'Build provenance',
+    expansion: null,
+    aliases: ['attestation', 'gh attestation verify', 'image digest'],
+    category: 'compliance',
+    short:
+      'A signed statement binding the image digest to the repository, commit and workflow run that produced it.',
+    detail:
+      'The publish workflow pushes a build-provenance attestation to the registry, so verification needs no trust in the README: gh attestation verify oci://ghcr.io/kristofer84/dmarc-parser:latest --repo kristofer84/dmarc-parser checks the signature against the subject digest and exits non-zero when it does not match.',
+    whyItMatters:
+      'This is what lets an operator write down that the artifact they run is the one built from a named commit. It also means an image cannot be quietly rebuilt from a different tree without verification failing.',
+    reference: null,
+    related: ['sbom', 'supply-chain-security', 'nis2'],
+  },
+  {
+    id: 'supply-chain-security',
+    term: 'Supply-chain security',
+    expansion: null,
+    aliases: ['supplier risk', 'dependency policy'],
+    category: 'compliance',
+    short:
+      'The obligation to know and manage what your software depends on.',
+    detail:
+      'On this repository side that means committed lockfiles, npm ci, CI-gated publishing, Dependabot watching npm in backend and frontend plus the workflow actions and the Dockerfile, and attestations on the published image. It says nothing about your other suppliers, and nothing here assesses them.',
+    whyItMatters:
+      'When an auditor asks how you know this component is maintained, the answer is a disclosure policy, a dependency bot, a CI gate and an SBOM - and then the honest gaps listed in docs/nis2.md, rather than an implication that more is covered than is.',
+    reference: 'NIS2 Art. 21(2)(d)',
+    related: ['sbom', 'build-provenance', 'nis2', 'audit-trail'],
   },
 ];
