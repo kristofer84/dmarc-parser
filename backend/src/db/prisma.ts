@@ -1,10 +1,26 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/prisma/client.js';
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
+/**
+ * Prisma 7 talks to SQLite through a driver adapter.
+ *
+ * `timestampFormat: 'unixepoch-ms'` is not optional here: the databases this app has been
+ * running on 5.x store DateTime as INTEGER epoch-milliseconds. The adapter's default writes
+ * ISO text, which sorts after every existing row - so a single new audit entry would appear
+ * at the end of time and every ORDER BY createdAt would silently lie. Verified against a
+ * copy of the live database before this was committed.
+ */
+const adapter = new PrismaBetterSqlite3(
+  { url: process.env.DATABASE_URL ?? 'file:./data.db' },
+  { timestampFormat: 'unixepoch-ms' },
+);
+
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({
+  adapter,
   log: ['query', 'info', 'warn', 'error'],
 });
 
@@ -44,11 +60,15 @@ export async function initializeDatabase() {
     const { promisify } = await import('util');
     const execAsync = promisify(exec);
 
-    // Always run prisma db push to ensure schema is up to date
-    // This will create tables if they don't exist or update them if needed
+    // Always run prisma db push to ensure schema is up to date.
+    //
+    // Deliberately WITHOUT --accept-data-loss (dropped when moving to Prisma 7): additive
+    // changes - the normal case - apply either way, while a destructive one now fails the
+    // start with a clear message instead of silently dropping a column. For an app whose job
+    // includes keeping audit evidence, refusing to start is the safer failure.
     try {
       console.log('📝 Ensuring database schema is up to date...');
-      await execAsync('npx prisma db push --accept-data-loss', { cwd: process.cwd() });
+      await execAsync('npx prisma db push', { cwd: process.cwd() });
       console.log('✅ Database schema synchronized');
     } catch (pushError) {
       console.error('❌ Failed to synchronize database schema:', pushError);

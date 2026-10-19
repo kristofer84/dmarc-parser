@@ -19,6 +19,8 @@ RUN npm ci
 # Copy source code
 COPY src ./src
 COPY prisma ./prisma
+# Prisma 7 reads the datasource URL from the config file, and db push runs at start.
+COPY prisma.config.ts ./
 
 # Generate Prisma client
 RUN npx prisma generate
@@ -46,8 +48,8 @@ RUN npm ci && npm cache clean --force
 
 # Copy built application
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
+COPY prisma.config.ts ./
 
 # Create data directory and ensure it's writable
 RUN mkdir -p /app/data && chmod 777 /app/data

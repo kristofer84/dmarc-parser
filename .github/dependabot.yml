@@ -26,6 +26,14 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # TypeScript 7 is the native compiler: it ships a binary and no longer exports the
+    # `typescript/lib/tsc` entry that vue-tsc requires, so `vue-tsc --noEmit` dies with
+    # ERR_PACKAGE_PATH_NOT_EXPORTED before it checks a single file. vue-tsc 3.3.13 (latest)
+    # is still built on the JS compiler API. Remove this rule when a vue-tsc release supports
+    # TS 7 - the backend is already on 7, so the split is deliberate, not an oversight.
+    ignore:
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
     groups:
       frontend-minor-patch:
         patterns: ['*']

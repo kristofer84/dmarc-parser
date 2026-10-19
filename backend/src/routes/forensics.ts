@@ -1,5 +1,5 @@
 import express from 'express';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/prisma/client.js';
 import { prisma } from '../db/prisma.js';
 import { rateLimit, validatePagination } from '../middleware/validation.js';
 import {

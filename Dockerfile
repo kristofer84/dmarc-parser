@@ -30,6 +30,7 @@ COPY backend/tsconfig.json ./
 RUN npm ci
 COPY backend/src ./src
 COPY backend/prisma ./prisma
+COPY backend/prisma.config.ts ./
 RUN npx prisma generate && npm run build
 
 # ---------------------------------------------------------------- runtime
@@ -45,8 +46,12 @@ COPY backend/package*.json ./
 RUN npm ci && npm cache clean --force
 
 COPY --from=backend /app/dist ./dist
-COPY --from=backend /app/node_modules/.prisma ./node_modules/.prisma
+# The generated client is compiled into dist (it lives in src/generated), so there is no
+# node_modules/.prisma to copy any more - Prisma 7 has no such directory.
 COPY backend/prisma ./prisma
+# initializeDatabase runs `prisma db push` at start, and Prisma 7 reads the datasource URL
+# from this file rather than from the schema.
+COPY backend/prisma.config.ts ./
 COPY --from=frontend /app/dist ./public
 
 # Fail the build here rather than publishing an image that serves an empty page because the

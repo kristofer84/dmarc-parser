@@ -148,3 +148,6 @@ prisma/migrations/
 # would have shipped a clean clone with no favicon at all.
 !frontend/public/
 !frontend/public/**
+
+# Prisma 7 generates the client into src/ (see prisma/schema.prisma)
+backend/src/generated/

@@ -1,6 +1,6 @@
 import express from 'express';
 import type { Response } from 'express';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/prisma/client.js';
 import { prisma } from '../db/prisma.js';
 import { requireAdmin, sendError, type AuthenticatedRequest } from '../middleware/auth.js';
 import {

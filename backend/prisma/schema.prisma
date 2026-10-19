@@ -1,13 +1,17 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
+// Prisma 7: the generated client lives in src/ so tsc compiles it with the rest, and the
+// imports it emits must carry a .js extension or Node ESM cannot resolve them.
 generator client {
-  provider = "prisma-client-js"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  importFileExtension = "js"
 }
 
+// `url` moved to prisma.config.ts in 7; leaving it here is a hard P1012 error.
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model Report {
