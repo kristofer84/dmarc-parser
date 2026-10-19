@@ -16,7 +16,8 @@
     "process-emails": "tsx src/cli/processEmails.ts",
     "reparse": "node dist/cli/reparseArchive.js",
     "reparse:dev": "tsx src/cli/reparseArchive.ts",
-    "dnssec": "tsx src/cli/dnssec.ts"
+    "dnssec": "tsx src/cli/dnssec.ts",
+    "tlsrpt:import": "tsx src/cli/importTlsRpt.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.10.1",

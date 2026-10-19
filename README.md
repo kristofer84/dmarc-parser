@@ -63,6 +63,7 @@ hosted fork is not permitted.
 - **Forensic (ruf) reports**: per-message authentication failures, including the failing message's headers when the reporter attaches it
 - **TLS-RPT reports**: SMTP TLS outcomes from senders (successes, failures and the reason for each failure), which is what tells you whether MTA-STS can be enforced
 - **Nothing arriving silently dropped**: an attachment the parsers do not understand is listed in the processing log rather than disappearing
+- **Both TLS-RPT transports**: reports arriving by mail are ingested directly; the reports an HTTPS collector stores on the mail host are pulled hourly by a small sync job that lives outside the container (so the app never holds an SSH key)
 - **Multi-user with per-domain access**: administrators see everything, users see only the domains assigned to them
 - **Passkeys and SSO, without giving up passwords**: WebAuthn sign-in, plus OIDC as an identity-only third way in
 - **Persistent audit trail**: who changed what, from where, and whether it worked - with filters, CSV/JSON export and a SHA-256 digest over each export

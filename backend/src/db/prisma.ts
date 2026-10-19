@@ -19,9 +19,19 @@ const adapter = new PrismaBetterSqlite3(
   { timestampFormat: 'unixepoch-ms' },
 );
 
+/**
+ * Query logging is opt-in (`PRISMA_LOG_QUERIES=true`). It used to be on always, which filled
+ * the container's capped json-file log with every SELECT and buried the lines that matter -
+ * including the output of the CLIs, where a hundred query lines wrapped each imported report.
+ */
+const logLevels: Array<'query' | 'info' | 'warn' | 'error'> = ['info', 'warn', 'error'];
+if (process.env.PRISMA_LOG_QUERIES === 'true') {
+  logLevels.unshift('query');
+}
+
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({
   adapter,
-  log: ['query', 'info', 'warn', 'error'],
+  log: logLevels,
 });
 
 if (process.env.NODE_ENV !== 'production') {
