@@ -39,7 +39,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Cross-building arm64 on an amd64 runner. Slower than native, but it is a few
       # minutes for this project and it keeps publishing off the Pi.
