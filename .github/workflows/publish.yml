@@ -12,6 +12,14 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+# A multi-arch build takes minutes, and a burst of small commits (a Dependabot merge run, a
+# documentation fix) would otherwise queue one full build per commit and publish them in order.
+# Only the last commit on a branch is worth an image, so a newer run cancels an older one - but a
+# tagged release never cancels itself, because that artifact is meant to be kept.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
 permissions:
   contents: read
   packages: write
