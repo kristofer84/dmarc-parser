@@ -160,14 +160,36 @@
                 </template>
               </p>
             </div>
-            <button
-              @click="checkNow"
-              :disabled="checkingNow"
-              class="btn btn-primary text-sm"
-              :class="{ 'opacity-50 cursor-not-allowed': checkingNow }"
-            >
-              {{ checkingNow ? 'Checking…' : 'Check now' }}
-            </button>
+            <div class="flex items-center gap-3">
+              <button
+                @click="checkNow"
+                :disabled="checkingNow"
+                class="btn btn-primary text-sm"
+                :class="{ 'opacity-50 cursor-not-allowed': checkingNow }"
+              >
+                {{ checkingNow ? 'Checking…' : 'Check now' }}
+              </button>
+              <!-- Removal used to live only inside the edit form at the bottom of the panel,
+                   which is why it looked as if a domain could be added but never removed. -->
+              <button
+                v-if="isAdmin"
+                type="button"
+                class="btn btn-secondary text-sm text-danger-700"
+                :disabled="removing"
+                :class="{ 'opacity-50 cursor-not-allowed': removing }"
+                @click="removeDomain"
+              >
+                <svg class="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"
+                  />
+                </svg>
+                {{ removing ? 'Removing…' : 'Remove' }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -339,14 +361,6 @@
                     @click="saveEdit"
                   >
                     {{ savingEdit ? 'Saving…' : 'Save' }}
-                  </button>
-                  <button
-                    class="btn btn-secondary text-sm text-danger-700"
-                    :disabled="removing"
-                    :class="{ 'opacity-50 cursor-not-allowed': removing }"
-                    @click="removeDomain"
-                  >
-                    {{ removing ? 'Removing…' : 'Delete' }}
                   </button>
                 </div>
               </div>
@@ -710,7 +724,12 @@ const removeDomain = async () => {
   if (!current) return;
 
   const { id, name } = current.domain;
-  if (!window.confirm(`Remove ${name} from monitoring? Its check history is deleted too.`)) return;
+  const confirmed = window.confirm(
+    `Remove ${name} from monitoring?\n\n` +
+      'Its check history is deleted. DMARC, forensic and TLS reports already ingested are kept - ' +
+      'only the monitoring entry and its DNS check results go.',
+  );
+  if (!confirmed) return;
 
   removing.value = true;
   try {
