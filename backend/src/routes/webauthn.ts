@@ -18,6 +18,7 @@ import {
   type WebAuthnFailure,
   type WebAuthnFailureReason,
 } from '../services/webauthn.js';
+import { pathParam } from '../utils/requestParams.js';
 
 /**
  * Passkey (WebAuthn) endpoints, mounted at /api/auth/webauthn.
@@ -233,13 +234,13 @@ router.get('/credentials', requireAuth, async (req: AuthenticatedRequest, res) =
 // DELETE /webauthn/credentials/:id - one of your own; someone else's is a 404, not a 403,
 // so the endpoint cannot be used to probe for other accounts' credential ids.
 router.delete('/credentials/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
-  const removed = await removeCredential(req.user!.id, req.params.id);
+  const removed = await removeCredential(req.user!.id, pathParam(req, 'id'));
   if (!removed) {
     return sendError(res, 404, 'NOT_FOUND', 'Passkey not found');
   }
 
-  console.log(`🔑 passkey removed: user=${req.user!.email} id=${req.params.id}`);
-  req.audit = { action: 'auth.passkey.remove', target: req.user!.email, detail: { credentialId: req.params.id } };
+  console.log(`🔑 passkey removed: user=${req.user!.email} id=${pathParam(req, 'id')}`);
+  req.audit = { action: 'auth.passkey.remove', target: req.user!.email, detail: { credentialId: pathParam(req, 'id') } };
   return res.json({ credentials: await listCredentials(req.user!.id) });
 });
 

@@ -13,6 +13,7 @@ import {
   requireAuth,
   type AuthenticatedRequest,
 } from '../middleware/auth.js';
+import { pathParam } from '../utils/requestParams.js';
 
 const router = express.Router();
 
@@ -211,7 +212,7 @@ router.get('/:id',
   validateUUID('id'),
   async (req, res, next) => {
     try {
-      const { id } = req.params;
+      const id = pathParam(req, 'id');
 
       const report = await prisma.report.findUnique({
         where: { id },

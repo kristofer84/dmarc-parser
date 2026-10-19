@@ -9,6 +9,7 @@ import {
   serializeProvider,
   testProvider,
 } from '../services/oidc.js';
+import { pathParam } from '../utils/requestParams.js';
 
 /**
  * Administrator management of sign-in providers, mounted at /api/providers.
@@ -133,7 +134,7 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
 
 // PATCH /providers/:id
 router.patch('/:id', async (req: AuthenticatedRequest, res) => {
-  const existing = await prisma.authProvider.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.authProvider.findUnique({ where: { id: pathParam(req, 'id') } });
   if (!existing) {
     return sendError(res, 404, 'NOT_FOUND', 'Provider not found');
   }
@@ -172,7 +173,7 @@ router.patch('/:id', async (req: AuthenticatedRequest, res) => {
 // account has no password it knows, so an administrator deleting a provider an account
 // depends on is locking that account out until it is reset or the provider is re-added.
 router.delete('/:id', async (req: AuthenticatedRequest, res) => {
-  const existing = await prisma.authProvider.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.authProvider.findUnique({ where: { id: pathParam(req, 'id') } });
   if (!existing) {
     return sendError(res, 404, 'NOT_FOUND', 'Provider not found');
   }
@@ -186,7 +187,7 @@ router.delete('/:id', async (req: AuthenticatedRequest, res) => {
 
 // POST /providers/:id/test - a failed check is an answer, so this is 200 with ok:false
 router.post('/:id/test', async (req: AuthenticatedRequest, res) => {
-  const provider = await prisma.authProvider.findUnique({ where: { id: req.params.id } });
+  const provider = await prisma.authProvider.findUnique({ where: { id: pathParam(req, 'id') } });
   if (!provider) {
     return sendError(res, 404, 'NOT_FOUND', 'Provider not found');
   }

@@ -10,6 +10,7 @@ import {
   validatePasswordStrength,
 } from '../services/auth.js';
 import { removeAllCredentialsForUser } from '../services/webauthn.js';
+import { pathParam } from '../utils/requestParams.js';
 
 const router = express.Router();
 
@@ -163,7 +164,7 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
 // PATCH /users/:id
 router.patch('/:id', async (req: AuthenticatedRequest, res) => {
   const { name, role, isActive, mustChangePassword } = req.body ?? {};
-  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+  const target = await prisma.user.findUnique({ where: { id: pathParam(req, 'id') } });
 
   if (!target) {
     return sendError(res, 404, 'NOT_FOUND', 'User not found');
@@ -233,7 +234,7 @@ router.post('/:id/password', async (req: AuthenticatedRequest, res) => {
     return sendError(res, 400, 'VALIDATION_ERROR', (error as Error).message);
   }
 
-  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+  const target = await prisma.user.findUnique({ where: { id: pathParam(req, 'id') } });
   if (!target) {
     return sendError(res, 404, 'NOT_FOUND', 'User not found');
   }
@@ -270,7 +271,7 @@ router.put('/:id/domains', async (req: AuthenticatedRequest, res) => {
     return sendError(res, 400, 'VALIDATION_ERROR', 'domains must be an array of domain names');
   }
 
-  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+  const target = await prisma.user.findUnique({ where: { id: pathParam(req, 'id') } });
   if (!target) {
     return sendError(res, 404, 'NOT_FOUND', 'User not found');
   }
@@ -291,7 +292,7 @@ router.put('/:id/domains', async (req: AuthenticatedRequest, res) => {
 // offer: the account falls back to the password it already has, and an administrator who
 // fired this by mistake has cost the user nothing but a re-registration.
 router.delete('/:id/passkeys', async (req: AuthenticatedRequest, res) => {
-  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+  const target = await prisma.user.findUnique({ where: { id: pathParam(req, 'id') } });
 
   if (!target) {
     return sendError(res, 404, 'NOT_FOUND', 'User not found');
@@ -306,7 +307,7 @@ router.delete('/:id/passkeys', async (req: AuthenticatedRequest, res) => {
 
 // DELETE /users/:id
 router.delete('/:id', async (req: AuthenticatedRequest, res) => {
-  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+  const target = await prisma.user.findUnique({ where: { id: pathParam(req, 'id') } });
 
   if (!target) {
     return sendError(res, 404, 'NOT_FOUND', 'User not found');

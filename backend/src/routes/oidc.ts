@@ -6,6 +6,7 @@ import { createSession, getDomainsForUser } from '../services/auth.js';
 import { setSessionCookie } from '../services/sessionCookie.js';
 import { prisma } from '../db/prisma.js';
 import { beginLogin, completeLogin, type OidcFailureReason } from '../services/oidc.js';
+import { pathParam } from '../utils/requestParams.js';
 
 /**
  * Public single-sign-on endpoints, mounted at /api/auth.
@@ -63,7 +64,7 @@ router.get('/providers', async (_req, res) => {
 router.get('/oidc/:id/start', rateLimit(50, 60000, 'oidc-start'), async (req, res) => {
   let result;
   try {
-    result = await beginLogin(req.params.id, callbackUrl(req, req.params.id));
+    result = await beginLogin(pathParam(req, 'id'), callbackUrl(req, pathParam(req, 'id')));
   } catch (error) {
     // A provider that does not answer discovery is a gateway problem, not a client error,
     // and the login page must not be told why.
@@ -86,7 +87,7 @@ router.get('/oidc/:id/callback', rateLimit(50, 60000, 'oidc-callback'), async (r
   // The URL openid-client reads the authorization response from, including the query string.
   const currentUrl = new URL(`${requestOrigin(req)}${req.originalUrl}`);
 
-  const outcome = await completeLogin({ providerId: req.params.id, code, state, currentUrl });
+  const outcome = await completeLogin({ providerId: pathParam(req, 'id'), code, state, currentUrl });
 
   if (!outcome.ok) {
     // The redirect target already tells the login page why; the audit row must too, or the
@@ -94,7 +95,7 @@ router.get('/oidc/:id/callback', rateLimit(50, 60000, 'oidc-callback'), async (r
     req.audit = {
       action: 'auth.login',
       outcome: 'failure',
-      detail: { method: 'oidc', provider: req.params.id, reason: outcome.reason },
+      detail: { method: 'oidc', provider: pathParam(req, 'id'), reason: outcome.reason },
     };
     return res.redirect(302, `/login?error=${FAILURE_CODE[outcome.reason]}`);
   }
@@ -117,7 +118,7 @@ router.get('/oidc/:id/callback', rateLimit(50, 60000, 'oidc-callback'), async (r
     actorId: outcome.user.id,
     detail: {
       method: 'oidc',
-      provider: req.params.id,
+      provider: pathParam(req, 'id'),
       outcome: outcome.outcome,
       role: outcome.role,
     },

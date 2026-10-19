@@ -10,6 +10,7 @@ import {
 import { resolveMailboxConfig, testMailboxConnection } from '../services/mailboxConfig.js';
 import { getStoredSetting, type SettingDefinition } from '../services/settings.js';
 import { previewRetention, runRetention } from '../services/retention.js';
+import { pathParam } from '../utils/requestParams.js';
 
 const router = express.Router();
 
@@ -69,7 +70,7 @@ router.post('/retention/run', rateLimit(5, 60000), async (req: AuthenticatedRequ
 
 // PATCH /settings/:key
 router.patch('/:key', async (req: AuthenticatedRequest, res) => {
-  const { key } = req.params;
+  const key = pathParam(req, 'key');
   const { value } = req.body ?? {};
 
   const definition = getSettingDefinition(key);

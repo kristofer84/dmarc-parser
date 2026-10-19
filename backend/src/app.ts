@@ -187,7 +187,10 @@ export function createApp(): express.Application {
     console.log(`🖼️ Serving the built frontend from ${staticDir}`);
     app.use(express.static(staticDir, { index: false, maxAge: '1h' }));
 
-    app.get('*', (req, res, next) => {
+    // Express 5 / path-to-regexp v8: a wildcard must be named, and `*` alone throws.
+    // The braces make it optional, so `/` itself is served - `/*splat` alone matches only
+    // paths with at least one segment and left the root page answering 404.
+    app.get('/{*splat}', (req, res, next) => {
       // Unknown API paths must keep answering JSON, not the SPA shell.
       if (req.path.startsWith('/api/') || req.path.startsWith('/health')) {
         next();
@@ -197,8 +200,9 @@ export function createApp(): express.Application {
     });
   }
 
-  // 404 handler
-  app.use('*', (req, res) => {
+  // 404 handler. No path argument: a catch-all middleware is `app.use(handler)` now that
+  // bare `'*'` is invalid.
+  app.use((req, res) => {
     const error: ErrorResponse = {
       error: {
         code: 'NOT_FOUND',

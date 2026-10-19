@@ -24,6 +24,7 @@ import {
   runAllChecks,
   runDomainCheck,
 } from '../services/domainMonitor.js';
+import { pathParam } from '../utils/requestParams.js';
 
 const router = express.Router();
 
@@ -106,7 +107,7 @@ router.post('/', requireAdmin, async (req: AuthenticatedRequest, res) => {
 // GET /domains/:id - one domain with its history
 router.get('/:id', async (req: AuthenticatedRequest, res) => {
   const scope = await getDomainScope(req);
-  const found = await getDomain(req.params.id, scope);
+  const found = await getDomain(pathParam(req, 'id'), scope);
 
   // Out of scope answers 404, like every other per-domain resource.
   if (!found) {
@@ -120,7 +121,7 @@ router.get('/:id', async (req: AuthenticatedRequest, res) => {
 router.patch('/:id', requireAdmin, async (req: AuthenticatedRequest, res) => {
   const { dkimSelectors, expectedMx, notes, monitored } = req.body ?? {};
 
-  const existing = await prisma.domain.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.domain.findUnique({ where: { id: pathParam(req, 'id') } });
   if (!existing) {
     return sendError(res, 404, 'NOT_FOUND', 'Domain not found');
   }
@@ -157,7 +158,7 @@ router.patch('/:id', requireAdmin, async (req: AuthenticatedRequest, res) => {
 
 // DELETE /domains/:id
 router.delete('/:id', requireAdmin, async (req: AuthenticatedRequest, res) => {
-  const existing = await prisma.domain.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.domain.findUnique({ where: { id: pathParam(req, 'id') } });
   if (!existing) {
     return sendError(res, 404, 'NOT_FOUND', 'Domain not found');
   }
@@ -171,7 +172,7 @@ router.delete('/:id', requireAdmin, async (req: AuthenticatedRequest, res) => {
 // POST /domains/:id/check - run the checks now
 router.post('/:id/check', rateLimit(20, 60000), async (req: AuthenticatedRequest, res) => {
   const scope = await getDomainScope(req);
-  const existing = await prisma.domain.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.domain.findUnique({ where: { id: pathParam(req, 'id') } });
 
   if (!existing || (scope !== null && !scope.includes(existing.name))) {
     return sendError(res, 404, 'NOT_FOUND', 'Domain not found');
@@ -190,7 +191,7 @@ router.post('/:id/check', rateLimit(20, 60000), async (req: AuthenticatedRequest
 // POST /domains/:id/records - the DNS records this domain should publish
 router.post('/:id/records', rateLimit(20, 60000), async (req: AuthenticatedRequest, res) => {
   const scope = await getDomainScope(req);
-  const existing = await prisma.domain.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.domain.findUnique({ where: { id: pathParam(req, 'id') } });
 
   // Out of scope answers 404, exactly like GET /domains/:id.
   if (!existing || (scope !== null && !scope.includes(existing.name))) {

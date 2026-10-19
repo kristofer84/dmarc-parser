@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ErrorResponse } from '../app.js';
+import { pathParam } from '../utils/requestParams.js';
 
 export interface ValidationError extends Error {
   statusCode: number;
@@ -47,7 +48,7 @@ export function validateSorting(validFields: string[]) {
 
 export function validateUUID(paramName: string) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const value = req.params[paramName];
+    const value = pathParam(req, paramName);
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     
     // For CUID (which Prisma uses by default)

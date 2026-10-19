@@ -8,6 +8,7 @@ import {
   sendError,
   type AuthenticatedRequest,
 } from '../middleware/auth.js';
+import { pathParam } from '../utils/requestParams.js';
 
 const router = express.Router();
 
@@ -236,7 +237,7 @@ router.get('/', rateLimit(60, 60000), validatePagination, async (req: Authentica
 // GET /forensics/:id
 router.get('/:id', async (req: AuthenticatedRequest, res) => {
   const scope = await getDomainScope(req);
-  const report = await prisma.forensicReport.findUnique({ where: { id: req.params.id } });
+  const report = await prisma.forensicReport.findUnique({ where: { id: pathParam(req, 'id') } });
 
   // Out-of-scope ids answer 404 rather than 403, so the endpoint cannot be used to
   // discover which domains exist on the instance.
