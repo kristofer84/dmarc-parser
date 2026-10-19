@@ -41,7 +41,7 @@ updates:
         patterns: ['*']
         update-types: ['minor', 'patch']
 
-  # The Dockerfile is at the repo root; the base images are node:24-alpine and node:24-slim.
+  # The Dockerfile is at the repo root; the base images are node:26-alpine and node:26-slim.
   - package-ecosystem: docker
     directory: /
     schedule:
@@ -49,5 +49,29 @@ updates:
     open-pull-requests-limit: 5
     groups:
       docker-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+
+  # The two-container deployment has its own Dockerfiles (backend API, frontend nginx).
+  # Without these entries the published image would track upgrades and the live deployment
+  # would silently stay on the old runtime - which is exactly what happened when the root
+  # Dockerfile moved to Node 26 first.
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker-backend-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker-frontend-minor-patch:
         patterns: ['*']
         update-types: ['minor', 'patch']
