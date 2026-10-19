@@ -11,7 +11,7 @@
 # Dockerfile is what gets published to ghcr.io and what the quickstart uses.
 
 # ---------------------------------------------------------------- frontend build
-FROM node:24-alpine AS frontend
+FROM node:26-alpine AS frontend
 WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci
@@ -20,7 +20,7 @@ COPY frontend/ ./
 RUN npm run build:docker
 
 # ---------------------------------------------------------------- backend build
-FROM node:24-slim AS backend
+FROM node:26-slim AS backend
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
       openssl ca-certificates \
@@ -33,7 +33,7 @@ COPY backend/prisma ./prisma
 RUN npx prisma generate && npm run build
 
 # ---------------------------------------------------------------- runtime
-FROM node:24-slim AS production
+FROM node:26-slim AS production
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
       openssl ca-certificates curl \
