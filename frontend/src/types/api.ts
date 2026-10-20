@@ -17,6 +17,14 @@ export interface ReportSummary {
 }
 
 export interface DetailedReport extends ReportSummary {
+  /** `policy_published`; every field is null on reports ingested before it was stored. */
+  policy: {
+    p: string | null;
+    sp: string | null;
+    pct: number | null;
+    adkim: string | null;
+    aspf: string | null;
+  };
   records: Array<{
     id: string;
     sourceIp: string;
@@ -25,6 +33,9 @@ export interface DetailedReport extends ReportSummary {
     dkim: string;
     spf: string;
     headerFrom: string;
+    /** Raw `auth_results` from the receiver: which domain/selector actually produced the verdict. */
+    dkimAuth: Array<{ domain: string; result: string }>;
+    spfAuth: Array<{ domain: string; result: string }>;
   }>;
 }
 
@@ -33,6 +44,14 @@ export interface DashboardStats {
   totalMessages: number;
   avgSpfPassRate: number;
   avgDkimPassRate: number;
+  /**
+   * Policy-evaluated DMARC pass rate (SPF or DKIM pass) for the requested range. Optional
+   * because an older backend answers without it; the card falls back to 0 rather than "NaN%".
+   */
+  avgDmarcPassRate?: number;
+  /** Echoed back when the summary was requested with `?range=`; the UI labels its buckets. */
+  range?: StatsRange;
+  since?: string | null;
   policyDistribution: {
     none: number;
     quarantine: number;
@@ -83,6 +102,8 @@ export interface LoadingState {
 export interface ReportsFilters {
   domain?: string;
   orgName?: string;
+  /** Exact match on a record's source IP, so the sources view can link into a report list. */
+  sourceIp?: string;
   page?: number;
   limit?: number;
   sortBy?: string;
@@ -127,13 +148,118 @@ export interface AuthUser {
   passkeyPromptDismissed: boolean;
 }
 
+export interface OrganizationSummary {
+  id: string;
+  name: string;
+  slug: string;
+  role: 'admin' | 'viewer';
+  createdAt: string;
+}
+
+export interface OrganizationMember {
+  userId: string;
+  email: string;
+  name: string | null;
+  role: 'admin' | 'viewer';
+  createdAt: string;
+}
+
+export interface OrganizationMemberInput {
+  email: string;
+  role: 'admin' | 'viewer';
+  /** Only used when the account does not exist yet; ignored for an existing address. */
+  name?: string;
+  /** Only used when the account is created; an existing account keeps its password. */
+  password?: string;
+}
+
+/**
+ * An IMAP mailbox owned by an organisation. The password is write-only: the API only ever
+ * reports whether one is stored, so the UI must never expect the value back.
+ */
+export interface OrgMailbox {
+  id: string;
+  label: string;
+  host: string;
+  port: number;
+  user: string;
+  verifyTls: boolean;
+  enabled: boolean;
+  passwordSet: boolean;
+  lastRunAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrgMailboxInput {
+  label: string;
+  host: string;
+  port: number;
+  user: string;
+  /** Blank or absent keeps the stored password - the value is never returned to fill a form. */
+  password?: string;
+  verifyTls?: boolean;
+  enabled?: boolean;
+}
+
+/** DNS credentials belong to an organisation, never to a domain. */
+export type DnsAccountProvider = 'cloudflare' | 'loopia';
+
+export interface CloudflareCredentials {
+  token: string;
+}
+
+export interface LoopiaCredentials {
+  username: string;
+  password: string;
+}
+
+export type DnsAccountCredentials = CloudflareCredentials | LoopiaCredentials;
+
+export interface DnsAccount {
+  id: string;
+  label: string;
+  provider: DnsAccountProvider;
+  enabled: boolean;
+  /** The credentials themselves are never returned, only whether a set is stored. */
+  credentialSet: boolean;
+  /** How many domains are assigned to this account; absent on a create/update response. */
+  domainCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DnsAccountInput {
+  label: string;
+  /** Immutable after creation: the credential shape depends on it. */
+  provider: DnsAccountProvider;
+  enabled?: boolean;
+  /** Blank or absent keeps the stored credentials. */
+  credentials?: DnsAccountCredentials;
+}
+
+/** A refused credential check arrives as `ok: false`, so it is a result rather than an error. */
+export interface DnsAccountVerification {
+  ok: boolean;
+  message?: string;
+  /** What the credentials can see at the provider: zone or domain names. */
+  visible?: string[];
+}
+
 export interface SessionInfo {
   user: AuthUser;
   domains: string[];
+  /** Present on `/auth/me` and password login; absent on older passkey/verify responses. */
+  organizations?: OrganizationSummary[];
+  activeOrganizationId?: string | null;
+  orgRole?: 'admin' | 'viewer' | null;
+  isSuperAdmin?: boolean;
 }
 
 export interface SessionPolicy {
   registrationOpen: boolean;
+  orgSignupOpen: boolean;
   sessionHours: number;
   /** False when the deployment has WebAuthn switched off: no passkey UI anywhere. */
   passkeysEnabled: boolean;
@@ -299,6 +425,10 @@ export interface DomainSummary {
   dkimSelectors: string[];
   expectedMx: string[];
   notes: string | null;
+  /** Owning organisation; null when the domain was discovered but not yet claimed. */
+  organization: { id: string; name: string } | null;
+  /** DNS account Apply-to-DNS uses, when assigned. */
+  dnsAccount: { id: string; label: string; provider: string } | null;
   createdAt: string;
   updatedAt: string;
   lastCheck: {
@@ -410,6 +540,10 @@ export interface DomainUpdateInput {
   expectedMx?: string[];
   notes?: string;
   monitored?: boolean;
+  /** Superadmin only: move the domain to another organisation (null = unowned). */
+  orgId?: string | null;
+  /** Named DNS account; must belong to the domain's organisation. */
+  dnsAccountId?: string | null;
 }
 
 // ---------------------------------------------------------------- identity providers (OIDC)
@@ -431,6 +565,7 @@ export interface ProviderConfig {
   clientSecretSet: boolean;
   scopes: string;
   allowAutoProvision: boolean;
+  trustUnverifiedEmail: boolean;
   defaultDomains: string[];
   createdAt: string;
   updatedAt: string;
@@ -445,6 +580,7 @@ export interface ProviderInput {
   scopes?: string;
   enabled?: boolean;
   allowAutoProvision?: boolean;
+  trustUnverifiedEmail?: boolean;
   defaultDomains?: string[];
 }
 
@@ -571,4 +707,153 @@ export interface TlsRptFilters {
   to?: string;
   page?: number;
   limit?: number;
+}
+
+// ------------------------------------------------------------------ sources (per-IP analytics)
+
+/** The windows every ranged endpoint accepts. `all` means "no lower bound". */
+export type StatsRange = '7d' | '30d' | '90d' | 'all';
+
+export interface SourcesTotals {
+  messages: number;
+  failures: number;
+  dmarcPassRate: number;
+  sourceCount: number;
+}
+
+/**
+ * One sending IP. Pass rates are the policy-evaluated results the reporters applied, so this
+ * view never recomputes alignment - it only counts what arrived.
+ */
+export interface SourceRow {
+  sourceIp: string;
+  messages: number;
+  failures: number;
+  dmarcPassRate: number;
+  spfPassRate: number;
+  dkimPassRate: number;
+  /** Record counts per disposition: `{ none, quarantine, reject }`. */
+  dispositions: Record<string, number>;
+  domains: string[];
+  organizations: string[];
+  /** First/last sighting over all time, not just the selected range: that is what makes a
+   *  source recognisable as new. */
+  firstSeen: string | null;
+  lastSeen: string | null;
+}
+
+export interface SourcesResponse {
+  range: StatsRange;
+  since: string | null;
+  totals: SourcesTotals;
+  sources: SourceRow[];
+}
+
+// ------------------------------------------------------------------ alerts
+
+export type AlertKind = 'new_source' | 'failure_spike';
+
+/** The server's severity vocabulary; an unknown value falls back to a neutral chip. */
+export type AlertSeverity = 'info' | 'warning' | 'critical';
+
+export interface AlertRow {
+  id: string;
+  createdAt: string;
+  kind: AlertKind | string;
+  severity: AlertSeverity | string;
+  domain: string;
+  sourceIp: string | null;
+  title: string;
+  /** Parsed by the API; a string is still tolerated so a future change cannot break the list. */
+  detail: Record<string, unknown> | string | null;
+  dedupKey?: string;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+  deliveredAt: string | null;
+}
+
+export interface AlertsResponse {
+  data: AlertRow[];
+  total: number;
+}
+
+export interface AlertsFilters {
+  status?: 'open' | 'acknowledged' | 'all';
+  range?: StatsRange;
+  limit?: number;
+}
+
+// ------------------------------------------------------------------ DNS apply (Cloudflare)
+
+/** `unsupported` rows are never applied: they cannot be expressed as a record this API owns. */
+export type DnsAction = 'create' | 'update' | 'unchanged' | 'unsupported';
+
+export interface DnsPlanRecord {
+  key: string;
+  label?: string;
+  type: string;
+  name: string;
+  value: string;
+  /** What DNS currently answers for this name+type; several values can legitimately coexist. */
+  current: string[];
+  action: DnsAction;
+  reason?: string;
+}
+
+export interface DnsZone {
+  id: string;
+  name: string;
+}
+
+export interface DnsPlan {
+  provider: string;
+  /**
+   * The organisation DNS account the plan was read with; null for the legacy env/settings
+   * credentials. Optional because a backend that predates org accounts does not send it.
+   */
+  account?: { id: string; label: string; provider: string } | null;
+  /** Null when the domain (or any parent) is not a zone in the configured account. */
+  zone: DnsZone | null;
+  records: DnsPlanRecord[];
+  warnings: string[];
+}
+
+export interface DnsApplyInput {
+  keys: string[];
+  overwrite: boolean;
+}
+
+export interface DnsApplyApplied {
+  key: string;
+  action: string;
+  recordId?: string | null;
+}
+
+export interface DnsApplySkipped {
+  key: string;
+  reason: string;
+  current?: string | string[] | null;
+}
+
+export interface DnsApplyResult {
+  applied: DnsApplyApplied[];
+  skipped: DnsApplySkipped[];
+}
+
+export interface DmarcRuaResult {
+  value: string;
+  previous: string | null;
+  recordId: string | null;
+}
+
+// ------------------------------------------------------------------ ingest address
+
+export interface IngestInfo {
+  rua: string | null;
+  ruf: string | null;
+  configured: boolean;
+  lastReportAt: string | null;
+  reports30d: number;
+  /** At least one report for this domain inside the last 30 days. */
+  verified: boolean;
 }

@@ -65,9 +65,10 @@ export const IDP_PRESETS: IdpPreset[] = [
         'ID is a different value and does not belong in this URL.',
       'Register the callback URL under Authentication -> Add a platform -> Web. A redirect URI ' +
         'left on the SPA or Mobile platform is not used by a server-side code exchange.',
-      'The v2.0 id_token has no email_verified claim, and this app links or provisions only from ' +
-        'a verified email, so a first sign-in is refused with "has not verified this email ' +
-        'address yet" even once discovery and the token exchange work.',
+      'The v2.0 id_token has no email_verified claim; it is absent, not false. This app links and ' +
+        'provisions only from a verified address, so turn on "Trust the provider\'s email ' +
+        'address" for a directory you control. Left off, a first sign-in is refused with "has ' +
+        'not verified this email address yet" even once discovery and the token exchange work.',
       'Client secrets are created under Certificates & secrets and expire (24 months at most). ' +
         'Logins then fail with AADSTS7000222 until a new secret is pasted here.',
     ],

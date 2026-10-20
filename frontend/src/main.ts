@@ -11,6 +11,8 @@ import ReportListView from './views/ReportListView.vue'
 import ProcessingLogsView from './views/ProcessingLogsView.vue'
 import ForensicsView from './views/ForensicsView.vue'
 import DomainsView from './views/DomainsView.vue'
+import SourcesView from './views/SourcesView.vue'
+import AlertsView from './views/AlertsView.vue'
 import LoginView from './views/LoginView.vue'
 import AdminSettingsView from './views/AdminSettingsView.vue'
 import AdminUsersView from './views/AdminUsersView.vue'
@@ -19,6 +21,7 @@ import GlossaryView from './views/GlossaryView.vue'
 import AdminAuditView from './views/AdminAuditView.vue'
 import TlsRptView from './views/TlsRptView.vue'
 import AccountView from './views/AccountView.vue'
+import OrganisationView from './views/OrganisationView.vue'
 import { useAuth } from './composables/useAuth'
 import { brandingName } from './composables/useBranding'
 import { apiClient } from './api/client'
@@ -29,6 +32,8 @@ declare module 'vue-router' {
     public?: boolean
     /** Requires role 'admin'. */
     admin?: boolean
+    /** Requires instance superadmin or an admin of the active organisation. */
+    orgAdmin?: boolean
     /** Page label used in the document title; falls back to the route name. */
     title?: string
   }
@@ -58,6 +63,12 @@ const router = createRouter({
       component: () => import('./views/ReportDetailView.vue'),
       props: true,
       meta: { title: 'Report' },
+    },
+    {
+      path: '/sources',
+      name: 'Sources',
+      component: SourcesView,
+      meta: { title: 'Sources' },
     },
     {
       path: '/forensics',
@@ -109,6 +120,12 @@ const router = createRouter({
       meta: { title: 'TLS reports' },
     },
     {
+      path: '/alerts',
+      name: 'Alerts',
+      component: AlertsView,
+      meta: { title: 'Alerts' },
+    },
+    {
       path: '/glossary',
       name: 'Glossary',
       component: GlossaryView,
@@ -125,6 +142,14 @@ const router = createRouter({
       name: 'Account',
       component: AccountView,
       meta: { title: 'Account' },
+    },
+    {
+      // Per-organisation administration: members, mailboxes, DNS accounts. A superadmin keeps
+      // the instance pages; this one covers the tenant they have selected.
+      path: '/organisation',
+      name: 'Organisation',
+      component: OrganisationView,
+      meta: { orgAdmin: true, title: 'Organisation' },
     },
     {
       path: '/login',
@@ -160,6 +185,12 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.admin && state.user.role !== 'admin') {
+    return { name: 'Dashboard' }
+  }
+
+  // Org admins (and the instance superadmin) reach the organisation page; a viewer does not.
+  const isOrgAdmin = state.user.role === 'admin' || state.orgRole === 'admin'
+  if (to.meta.orgAdmin && !isOrgAdmin) {
     return { name: 'Dashboard' }
   }
 

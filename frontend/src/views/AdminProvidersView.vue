@@ -321,8 +321,30 @@
                 </span>
               </label>
               <p class="mt-1 text-xs text-gray-500 max-w-md">
-                Creates a console account the first time a user signs in through this provider.
-                Without it, the account has to exist already and the sign-in is refused.
+                Creates a console account the first time an unknown address signs in through this
+                provider. With it off, only addresses that already have an account can sign in: a
+                verified email links to that existing account, and anything else is refused.
+              </p>
+            </div>
+
+            <div>
+              <label class="inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  v-model="form.trustUnverifiedEmail"
+                  class="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                />
+                <span class="ml-2 text-sm font-medium text-gray-700">
+                  Trust the provider's email address
+                </span>
+              </label>
+              <p class="mt-1 text-xs text-gray-500 max-w-md">
+                Only for providers that never send <span class="font-mono">email_verified</span> -
+                Microsoft Entra ID v2.0 is one. An absent marker is then treated as verified, so
+                the address can link or provision an account. An explicit
+                <span class="font-mono">false</span> is still refused. Leave it off unless the
+                directory is one you control: it makes that provider's email claim the only proof
+                of who someone is.
               </p>
             </div>
           </div>
@@ -375,6 +397,7 @@ interface ProviderForm {
   defaultDomains: string;
   enabled: boolean;
   allowAutoProvision: boolean;
+  trustUnverifiedEmail: boolean;
 }
 
 const emptyForm = (): ProviderForm => ({
@@ -386,6 +409,7 @@ const emptyForm = (): ProviderForm => ({
   defaultDomains: '',
   enabled: true,
   allowAutoProvision: false,
+  trustUnverifiedEmail: false,
 });
 
 const providers = ref<ProviderConfig[]>([]);
@@ -569,6 +593,7 @@ const buildPayload = (): ProviderInput => ({
   ...(form.scopes.trim() ? { scopes: form.scopes.trim() } : {}),
   enabled: form.enabled,
   allowAutoProvision: form.allowAutoProvision,
+  trustUnverifiedEmail: form.trustUnverifiedEmail,
   defaultDomains: parseDomains(form.defaultDomains),
 });
 
@@ -622,6 +647,7 @@ const startEdit = (provider: ProviderConfig) => {
   form.defaultDomains = provider.defaultDomains.join(', ');
   form.enabled = provider.enabled;
   form.allowAutoProvision = provider.allowAutoProvision;
+  form.trustUnverifiedEmail = provider.trustUnverifiedEmail;
 };
 
 const remove = async (provider: ProviderConfig) => {

@@ -3,7 +3,11 @@
     <PageHeader
       title="DMARC Dashboard"
       description="Monitor your email authentication status and security metrics"
-    />
+    >
+      <template #actions>
+        <RangeSelector v-model="range" />
+      </template>
+    </PageHeader>
 
     <!-- Main content -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -41,7 +45,7 @@
       <!-- Dashboard content -->
       <div v-else-if="data && hasReports">
         <!-- Summary cards -->
-        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5 mb-8">
           <SummaryCard
             title="Total Reports"
             :value="data.totalReports"
@@ -67,6 +71,21 @@
             format="percentage"
             icon="check"
             :color="data.avgDkimPassRate >= 90 ? 'green' : data.avgDkimPassRate >= 70 ? 'yellow' : 'red'"
+          />
+          <!-- DMARC is the receiver's verdict (SPF or DKIM aligned): the number that decides
+               whether a message is delivered, so it sits beside the two ingredients. -->
+          <SummaryCard
+            title="DMARC Pass Rate"
+            :value="data.avgDmarcPassRate ?? 0"
+            format="percentage"
+            icon="shield"
+            :color="
+              (data.avgDmarcPassRate ?? 0) >= 90
+                ? 'green'
+                : (data.avgDmarcPassRate ?? 0) >= 70
+                  ? 'yellow'
+                  : 'red'
+            "
           />
         </div>
 
@@ -179,7 +198,7 @@
           <ChartView
             type="line"
             title="Message Volume & Failure Trends"
-            description="Daily message count and authentication failure rates over time"
+            description="Message count and authentication failure rates over the selected range"
             :data="trendsChartData"
             :height="350"
           />
@@ -236,9 +255,14 @@
 
           <!-- Top IPs -->
           <div class="card">
-            <div class="card-header">
-              <h3 class="text-lg leading-6 font-medium text-gray-900">Top Source IPs</h3>
-              <p class="mt-1 text-sm text-gray-500">IP addresses with highest message volume</p>
+            <div class="card-header flex items-start justify-between gap-3">
+              <div>
+                <h3 class="text-lg leading-6 font-medium text-gray-900">Top Source IPs</h3>
+                <p class="mt-1 text-sm text-gray-500">
+                  IP addresses with highest message volume
+                </p>
+              </div>
+              <router-link to="/sources" class="btn btn-secondary text-sm">View all</router-link>
             </div>
             <div class="card-body">
               <div class="space-y-3">
@@ -292,25 +316,38 @@
       <EmptyState
         v-else
         icon="chart"
-        title="No DMARC data available"
-        description="Start by processing some DMARC reports to see your dashboard metrics."
+        :title="range === 'all' ? 'No DMARC data available' : 'No reports in this window'"
+        :description="
+          range === 'all'
+            ? 'Start by processing some DMARC reports to see your dashboard metrics.'
+            : 'Nothing arrived in the selected range. Try a wider window.'
+        "
       />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import SummaryCard from '@/components/SummaryCard.vue';
 import ChartView from '@/components/ChartView.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
+import RangeSelector from '@/components/RangeSelector.vue';
 import { useAsyncData } from '@/composables/useApi';
 import { summaryApi, forensicsApi, domainsApi } from '@/api/client';
+import type { StatsRange } from '@/types/api';
+
+// The window is part of the request, not a client-side filter: every figure on this page
+// (totals, pass rates, trend buckets) describes the same range.
+const range = ref<StatsRange>('30d');
 
 // Fetch dashboard data
-const { data, loading, error, refresh } = useAsyncData(() => summaryApi.getSummary());
+const { data, loading, error, refresh } = useAsyncData(() => summaryApi.getSummary(range.value));
+
+// useAsyncData runs once at setup, so a new window has to ask again.
+watch(range, () => refresh());
 
 // Forensic (RUF) figures; an empty mailbox is normal, so failures here stay quiet.
 // The API answers with a zeroed summary rather than null when nothing has been ingested yet,

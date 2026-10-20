@@ -95,6 +95,23 @@
                 <dt class="text-sm font-medium text-gray-500">Total Records</dt>
                 <dd class="mt-1 text-sm text-gray-900">{{ data.records.length }}</dd>
               </div>
+              <div class="sm:col-span-2">
+                <dt class="text-sm font-medium text-gray-500">Published policy</dt>
+                <dd v-if="policyTags.length" class="mt-1 flex flex-wrap gap-1.5">
+                  <span
+                    v-for="tag in policyTags"
+                    :key="tag.key"
+                    class="badge badge-gray font-mono"
+                  >{{ tag.key }}={{ tag.value }}</span>
+                </dd>
+                <dd v-else class="mt-1 text-sm text-gray-500">
+                  Not recorded - this report was ingested before the published policy was stored.
+                </dd>
+                <p v-if="policyTags.length" class="mt-1 text-xs text-gray-500">
+                  What receivers were told to do with this domain's mail. <span class="font-mono">pct</span>
+                  below 100 means only that share of failing mail was subject to it.
+                </p>
+              </div>
             </dl>
           </div>
         </div>
@@ -102,7 +119,7 @@
         <!-- Records table -->
         <DataTable
           :columns="recordColumns"
-          :data="data.records"
+          :data="tableRecords"
           title="Authentication Records"
           description="Detailed breakdown of email authentication results by source IP"
           empty-message="No records found in this report"
@@ -133,6 +150,25 @@
 
           <template #cell-headerFrom="{ value }">
             <span class="text-gray-600">{{ value }}</span>
+          </template>
+
+          <!-- The raw auth_results lists: the policy-evaluated columns say pass/fail, this says
+               which domain the receiver actually saw. Empty on reports ingested before the
+               columns existed, which is why the em dash is the honest fallback. -->
+          <template #cell-auth="{ value }">
+            <div v-if="value.dkim.length || value.spf.length" class="space-y-1 text-xs">
+              <div v-for="entry in value.dkim" :key="`d-${entry.domain}-${entry.result}`">
+                <span class="text-gray-400">DKIM</span>
+                <span class="ml-1 font-mono text-gray-700">{{ entry.domain }}</span>
+                <StatusBadge :status="entry.result" kind="auth" class="ml-1" />
+              </div>
+              <div v-for="entry in value.spf" :key="`s-${entry.domain}-${entry.result}`">
+                <span class="text-gray-400">SPF</span>
+                <span class="ml-1 font-mono text-gray-700">{{ entry.domain }}</span>
+                <StatusBadge :status="entry.result" kind="auth" class="ml-1" />
+              </div>
+            </div>
+            <span v-else class="text-gray-400">—</span>
           </template>
         </DataTable>
 
@@ -225,7 +261,30 @@ const recordColumns = [
   { key: 'dkim', label: 'DKIM', sortable: true, type: 'badge' as const },
   { key: 'spf', label: 'SPF', sortable: true, type: 'badge' as const },
   { key: 'headerFrom', label: 'Header From', sortable: true },
+  { key: 'auth', label: 'Auth domains' },
 ];
+
+/** One row per record, with the two auth lists grouped for the single custom column. */
+const tableRecords = computed(() => {
+  if (!data.value) return [];
+  return data.value.records.map((record) => ({
+    ...record,
+    auth: { dkim: record.dkimAuth ?? [], spf: record.spfAuth ?? [] },
+  }));
+});
+
+/** Only the tags that were actually published; absent ones would read as "empty", not "default". */
+const policyTags = computed(() => {
+  const policy = data.value?.policy;
+  if (!policy) return [];
+  const tags: Array<{ key: string; value: string }> = [];
+  if (policy.p) tags.push({ key: 'p', value: policy.p });
+  if (policy.sp) tags.push({ key: 'sp', value: policy.sp });
+  if (policy.pct !== null) tags.push({ key: 'pct', value: String(policy.pct) });
+  if (policy.adkim) tags.push({ key: 'adkim', value: policy.adkim });
+  if (policy.aspf) tags.push({ key: 'aspf', value: policy.aspf });
+  return tags;
+});
 
 // Computed analytics
 const spfPassingMessages = computed(() => {

@@ -6,6 +6,8 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type {
+  OrganizationSummary,
+  OrganizationMember,
   ReportSummary,
   DetailedReport,
   DashboardStats,
@@ -48,6 +50,22 @@ import type {
   TlsRptReport,
   TlsRptSummary,
   TlsRptFilters,
+  StatsRange,
+  SourcesResponse,
+  AlertsResponse,
+  AlertsFilters,
+  AlertRow,
+  DnsPlan,
+  DnsApplyInput,
+  DnsApplyResult,
+  DmarcRuaResult,
+  IngestInfo,
+  OrgMailbox,
+  OrgMailboxInput,
+  DnsAccount,
+  DnsAccountInput,
+  DnsAccountVerification,
+  OrganizationMemberInput,
 } from '@/types/api';
 
 /**
@@ -57,6 +75,33 @@ import type {
  * the path cannot be hardcoded as `/api/...` here.
  */
 export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+
+/**
+ * The org sub-resource endpoints answer either `{ data: [...] }` or a bare array. One shape is
+ * documented; reading both keeps a mismatch from blanking a page.
+ */
+function unwrapList<T>(body: unknown): T[] {
+  if (Array.isArray(body)) {
+    return body as T[];
+  }
+  const wrapped = (body as { data?: unknown } | null)?.data;
+  return Array.isArray(wrapped) ? (wrapped as T[]) : [];
+}
+
+/** `{ <key>: row }` or the row itself - the create/update responses differ by resource. */
+function unwrapOne<T>(body: unknown, key: string): T {
+  const record = body as Record<string, unknown> | null;
+  const wrapped = record?.[key];
+  if (wrapped !== undefined) {
+    return wrapped as T;
+  }
+  // Some routes answer `{ data: row }` instead of `{ <key>: row }`; accept both rather than
+  // making the caller care which envelope a given endpoint chose.
+  if (record?.data && typeof record.data === 'object' && !Array.isArray(record.data)) {
+    return record.data as T;
+  }
+  return body as T;
+}
 
 class ApiClient {
   private client: AxiosInstance;
@@ -83,6 +128,13 @@ class ApiClient {
     // Request interceptor
     this.client.interceptors.request.use(
       (config) => {
+        if (typeof localStorage !== 'undefined') {
+          const orgId = localStorage.getItem('dmarc.activeOrgId');
+          if (orgId) {
+            config.headers = config.headers ?? {};
+            config.headers['X-Org-Id'] = orgId;
+          }
+        }
         console.log(`🔄 API Request: ${config.method?.toUpperCase()} ${config.url}`);
         return config;
       },
@@ -105,6 +157,14 @@ class ApiClient {
         const url = error.config?.url ?? '';
         if (error.response?.status === 401 && !url.startsWith('/auth/')) {
           this.unauthorizedHandler?.();
+        }
+        // A stored organisation the account no longer belongs to must not wedge every page.
+        if (
+          error.response?.status === 403 &&
+          error.response.data?.error?.code === 'ORG_FORBIDDEN' &&
+          typeof localStorage !== 'undefined'
+        ) {
+          localStorage.removeItem('dmarc.activeOrgId');
         }
 
         return Promise.reject(this.handleError(error));
@@ -135,6 +195,7 @@ class ApiClient {
     
     if (filters.domain) params.append('domain', filters.domain);
     if (filters.orgName) params.append('orgName', filters.orgName);
+    if (filters.sourceIp) params.append('sourceIp', filters.sourceIp);
     if (filters.page) params.append('page', filters.page.toString());
     if (filters.limit) params.append('limit', filters.limit.toString());
     if (filters.sortBy) params.append('sortBy', filters.sortBy);
@@ -153,9 +214,189 @@ class ApiClient {
   }
 
   // Summary API
-  async getSummary(): Promise<DashboardStats> {
-    const response = await this.client.get<DashboardStats>('/summary');
+  /**
+   * `range` scopes every figure and rebuckets the trend. Omitting it keeps the server's own
+   * default, so a backend that predates the parameter still answers.
+   */
+  // ------------------------------------------------------------------ organisations
+  async getOrganizations(): Promise<{ data: Array<OrganizationSummary & { counts?: Record<string, number> }> }> {
+    const response = await this.client.get('/organizations');
     return response.data;
+  }
+
+  async createOrganization(name: string): Promise<{ organization: OrganizationSummary }> {
+    const response = await this.client.post('/organizations', { name });
+    return response.data;
+  }
+
+  async getOrganizationMembers(orgId: string): Promise<{ data: OrganizationMember[] }> {
+    const response = await this.client.get(`/organizations/${encodeURIComponent(orgId)}/members`);
+    return response.data;
+  }
+
+  async addOrganizationMember(
+    orgId: string,
+    input: { email: string; role: 'admin' | 'viewer'; name?: string; password?: string }
+  ): Promise<{ member: OrganizationMember }> {
+    const response = await this.client.post(`/organizations/${encodeURIComponent(orgId)}/members`, input);
+    return response.data;
+  }
+
+  async updateOrganizationMemberRole(
+    orgId: string,
+    userId: string,
+    role: 'admin' | 'viewer'
+  ): Promise<{ member: OrganizationMember }> {
+    const response = await this.client.patch(
+      `/organizations/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`,
+      { role }
+    );
+    return response.data;
+  }
+
+  async removeOrganizationMember(orgId: string, userId: string): Promise<void> {
+    await this.client.delete(
+      `/organizations/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`
+    );
+  }
+
+  async signupOrganization(input: {
+    organizationName: string;
+    name: string;
+    email: string;
+    password: string;
+  }): Promise<SessionInfo> {
+    const response = await this.client.post<SessionInfo>('/auth/signup-org', input);
+    return response.data;
+  }
+
+  // ------------------------------------------------------------------ org mailboxes
+  async getOrgMailboxes(orgId: string): Promise<OrgMailbox[]> {
+    const response = await this.client.get(
+      `/organizations/${encodeURIComponent(orgId)}/mailboxes`
+    );
+    return unwrapList<OrgMailbox>(response.data);
+  }
+
+  async createOrgMailbox(orgId: string, input: OrgMailboxInput): Promise<OrgMailbox> {
+    const response = await this.client.post(
+      `/organizations/${encodeURIComponent(orgId)}/mailboxes`,
+      input
+    );
+    return unwrapOne<OrgMailbox>(response.data, 'mailbox');
+  }
+
+  async updateOrgMailbox(
+    orgId: string,
+    id: string,
+    input: Partial<OrgMailboxInput>
+  ): Promise<OrgMailbox> {
+    const response = await this.client.patch(
+      `/organizations/${encodeURIComponent(orgId)}/mailboxes/${encodeURIComponent(id)}`,
+      input
+    );
+    return unwrapOne<OrgMailbox>(response.data, 'mailbox');
+  }
+
+  async deleteOrgMailbox(orgId: string, id: string): Promise<void> {
+    await this.client.delete(
+      `/organizations/${encodeURIComponent(orgId)}/mailboxes/${encodeURIComponent(id)}`
+    );
+  }
+
+  /** A refused connection is `ok: false` on a 200, so the body is the result either way. */
+  async testOrgMailbox(orgId: string, id: string): Promise<MailboxTestResult> {
+    const response = await this.client.post<MailboxTestResult>(
+      `/organizations/${encodeURIComponent(orgId)}/mailboxes/${encodeURIComponent(id)}/test`,
+      undefined,
+      // A cold IMAP + TLS handshake routinely outlives the client's 10s default.
+      { timeout: 30000 }
+    );
+    return response.data;
+  }
+
+  // ------------------------------------------------------------------ org DNS accounts
+  async getDnsAccounts(orgId: string): Promise<DnsAccount[]> {
+    const response = await this.client.get(
+      `/organizations/${encodeURIComponent(orgId)}/dns-accounts`
+    );
+    return unwrapList<DnsAccount>(response.data);
+  }
+
+  async createDnsAccount(orgId: string, input: DnsAccountInput): Promise<DnsAccount> {
+    const response = await this.client.post(
+      `/organizations/${encodeURIComponent(orgId)}/dns-accounts`,
+      input
+    );
+    return unwrapOne<DnsAccount>(response.data, 'dnsAccount');
+  }
+
+  async updateDnsAccount(
+    orgId: string,
+    id: string,
+    input: Partial<Omit<DnsAccountInput, 'provider'>>
+  ): Promise<DnsAccount> {
+    const response = await this.client.patch(
+      `/organizations/${encodeURIComponent(orgId)}/dns-accounts/${encodeURIComponent(id)}`,
+      input
+    );
+    return unwrapOne<DnsAccount>(response.data, 'dnsAccount');
+  }
+
+  async deleteDnsAccount(orgId: string, id: string): Promise<void> {
+    await this.client.delete(
+      `/organizations/${encodeURIComponent(orgId)}/dns-accounts/${encodeURIComponent(id)}`
+    );
+  }
+
+  /** One read-only list call upstream; a rejected credential set comes back as `ok: false`. */
+  async verifyDnsAccount(orgId: string, id: string): Promise<DnsAccountVerification> {
+    const response = await this.client.post<DnsAccountVerification>(
+      `/organizations/${encodeURIComponent(orgId)}/dns-accounts/${encodeURIComponent(id)}/verify`,
+      undefined,
+      { timeout: 30000 }
+    );
+    return response.data;
+  }
+
+  async getSummary(range?: StatsRange): Promise<DashboardStats> {
+    const response = await this.client.get<DashboardStats>('/summary', {
+      params: range ? { range } : undefined,
+    });
+    return response.data;
+  }
+
+  // ------------------------------------------------------------------ sources
+  async getSources(range: StatsRange = '30d', limit?: number): Promise<SourcesResponse> {
+    const params: Record<string, string> = { range };
+    if (limit) params.limit = String(limit);
+
+    const response = await this.client.get<SourcesResponse>('/sources', { params });
+    return response.data;
+  }
+
+  // ------------------------------------------------------------------ alerts
+  async getAlerts(filters: AlertsFilters = {}): Promise<AlertsResponse> {
+    const params: Record<string, string> = {};
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== null && value !== '') {
+        params[key] = String(value);
+      }
+    }
+
+    const response = await this.client.get<AlertsResponse>('/alerts', { params });
+    const data = response.data?.data ?? [];
+    // `total` is the count before the limit; fall back to the page size if a proxy stripped it.
+    return { data, total: response.data?.total ?? data.length };
+  }
+
+  /** The contract pins the action, not the envelope: accept the row or `{ alert }`. */
+  async acknowledgeAlert(id: string): Promise<AlertRow | null> {
+    const response = await this.client.post<AlertRow | { alert: AlertRow }>(
+      `/alerts/${encodeURIComponent(id)}/ack`
+    );
+    const body = response.data as { alert?: AlertRow };
+    return body?.alert ?? (response.data as AlertRow);
   }
 
   async getProcessingLogs(
@@ -196,7 +437,7 @@ class ApiClient {
   // ------------------------------------------------------------------ authentication
   async login(email: string, password: string): Promise<SessionInfo> {
     const response = await this.client.post<SessionInfo>('/auth/login', { email, password });
-    return { user: response.data.user, domains: response.data.domains ?? [] };
+    return { ...response.data, domains: response.data.domains ?? [] };
   }
 
   async logout(): Promise<void> {
@@ -205,7 +446,7 @@ class ApiClient {
 
   async me(): Promise<SessionInfo> {
     const response = await this.client.get<SessionInfo>('/auth/me');
-    return { user: response.data.user, domains: response.data.domains ?? [] };
+    return { ...response.data, domains: response.data.domains ?? [] };
   }
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {
@@ -214,7 +455,7 @@ class ApiClient {
 
   async register(email: string, password: string, name?: string): Promise<SessionInfo> {
     const response = await this.client.post<SessionInfo>('/auth/register', { email, password, name });
-    return { user: response.data.user, domains: response.data.domains ?? [] };
+    return { ...response.data, domains: response.data.domains ?? [] };
   }
 
   async sessionPolicy(): Promise<SessionPolicy> {
@@ -262,7 +503,7 @@ class ApiClient {
   /** Sets the session cookie exactly like a password login, so it returns the same shape. */
   async passkeyLoginVerify(payload: AuthenticationResponseJSON): Promise<SessionInfo> {
     const response = await this.client.post<SessionInfo>('/auth/webauthn/login/verify', payload);
-    return { user: response.data.user, domains: response.data.domains ?? [] };
+    return { ...response.data, domains: response.data.domains ?? [] };
   }
 
   async listPasskeys(): Promise<PasskeySummary[]> {
@@ -357,6 +598,45 @@ class ApiClient {
     options: RecordSuggestionOptions = {}
   ): Promise<RecordSuggestions> {
     const response = await this.client.post<RecordSuggestions>(`/domains/${id}/records`, options);
+    return response.data;
+  }
+
+  /**
+   * Reads the zone from the provider, so it is several upstream round-trips: the client default
+   * of 10s is shorter than the server's own budget for them.
+   */
+  async getDnsPlan(name: string): Promise<DnsPlan> {
+    const response = await this.client.get<DnsPlan>(
+      `/domains/${encodeURIComponent(name)}/dns/plan`,
+      { timeout: 30000 }
+    );
+    return response.data;
+  }
+
+  /** The server recomputes the plan before writing: `keys` names records, it never carries values. */
+  async applyDnsPlan(name: string, payload: DnsApplyInput): Promise<DnsApplyResult> {
+    const response = await this.client.post<DnsApplyResult>(
+      `/domains/${encodeURIComponent(name)}/dns/apply`,
+      payload,
+      { timeout: 30000 }
+    );
+    return response.data;
+  }
+
+  async addDmarcRua(name: string): Promise<DmarcRuaResult> {
+    const response = await this.client.post<DmarcRuaResult>(
+      `/domains/${encodeURIComponent(name)}/dmarc/rua`,
+      undefined,
+      { timeout: 30000 }
+    );
+    return response.data;
+  }
+
+  /** Where this domain's reports are addressed, plus whether any have actually arrived. */
+  async getDomainIngest(name: string): Promise<IngestInfo> {
+    const response = await this.client.get<IngestInfo>(
+      `/domains/${encodeURIComponent(name)}/ingest`
+    );
     return response.data;
   }
 
@@ -585,7 +865,52 @@ export const reportsApi = {
 };
 
 export const summaryApi = {
-  getSummary: () => apiClient.getSummary(),
+  getSummary: (range?: StatsRange) => apiClient.getSummary(range),
+};
+
+export const organizationsApi = {
+  list: () => apiClient.getOrganizations(),
+  create: (name: string) => apiClient.createOrganization(name),
+  members: (orgId: string) => apiClient.getOrganizationMembers(orgId),
+  addMember: (orgId: string, input: OrganizationMemberInput) =>
+    apiClient.addOrganizationMember(orgId, input),
+  setRole: (orgId: string, userId: string, role: 'admin' | 'viewer') =>
+    apiClient.updateOrganizationMemberRole(orgId, userId, role),
+  removeMember: (orgId: string, userId: string) => apiClient.removeOrganizationMember(orgId, userId),
+};
+
+/** The mailboxes an organisation ingests from, and their write-only passwords. */
+export const mailboxesApi = {
+  list: (orgId: string) => apiClient.getOrgMailboxes(orgId),
+  create: (orgId: string, input: OrgMailboxInput) => apiClient.createOrgMailbox(orgId, input),
+  update: (orgId: string, id: string, input: Partial<OrgMailboxInput>) =>
+    apiClient.updateOrgMailbox(orgId, id, input),
+  remove: (orgId: string, id: string) => apiClient.deleteOrgMailbox(orgId, id),
+  test: (orgId: string, id: string) => apiClient.testOrgMailbox(orgId, id),
+};
+
+/** DNS provider credentials owned by the organisation, shared by its domains. */
+export const dnsAccountsApi = {
+  list: (orgId: string) => apiClient.getDnsAccounts(orgId),
+  create: (orgId: string, input: DnsAccountInput) => apiClient.createDnsAccount(orgId, input),
+  update: (orgId: string, id: string, input: Partial<Omit<DnsAccountInput, 'provider'>>) =>
+    apiClient.updateDnsAccount(orgId, id, input),
+  remove: (orgId: string, id: string) => apiClient.deleteDnsAccount(orgId, id),
+  verify: (orgId: string, id: string) => apiClient.verifyDnsAccount(orgId, id),
+};
+
+export const signupApi = {
+  organization: (input: { organizationName: string; name: string; email: string; password: string }) =>
+    apiClient.signupOrganization(input),
+};
+
+export const sourcesApi = {
+  list: (range: StatsRange = '30d') => apiClient.getSources(range),
+};
+
+export const alertsApi = {
+  list: (params?: AlertsFilters) => apiClient.getAlerts(params),
+  ack: (id: string) => apiClient.acknowledgeAlert(id),
 };
 
 export const processingLogsApi = {
@@ -647,6 +972,10 @@ export const domainsApi = {
   remove: (id: string) => apiClient.deleteDomain(id),
   suggestRecords: (id: string, options?: RecordSuggestionOptions) =>
     apiClient.suggestDomainRecords(id, options),
+  dnsPlan: (name: string) => apiClient.getDnsPlan(name),
+  dnsApply: (name: string, payload: DnsApplyInput) => apiClient.applyDnsPlan(name, payload),
+  dmarcRua: (name: string) => apiClient.addDmarcRua(name),
+  ingest: (name: string) => apiClient.getDomainIngest(name),
 };
 
 export const settingsApi = {

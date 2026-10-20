@@ -65,6 +65,7 @@
               v-for="(item, index) in data"
               :key="getRowKey(item, index)"
               class="table-row"
+              :class="rowClass ? rowClass(item) : ''"
               @click="handleRowClick(item)"
             >
               <td v-for="column in columns" :key="column.key" class="table-cell">
@@ -211,6 +212,8 @@ interface Props {
   sortOrder?: 'asc' | 'desc';
   pagination?: Pagination;
   rowKey?: string;
+  /** Lets a view mark the selected row; the table itself has no notion of selection. */
+  rowClass?: (item: any) => string;
 }
 
 const props = withDefaults(defineProps<Props>(), {

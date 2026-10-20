@@ -19,7 +19,7 @@
       <!-- Filters -->
       <div class="mb-6">
         <div class="bg-surface p-4 rounded-card shadow-card border border-gray-200">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label for="domain-filter" class="block text-sm font-medium text-gray-700 mb-1">
                 Domain
@@ -35,6 +35,19 @@
                 v-model="filters.orgName"
                 type="text"
                 placeholder="Filter by organization..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
+                @input="debouncedFilter"
+              />
+            </div>
+            <div>
+              <label for="source-ip-filter" class="block text-sm font-medium text-gray-700 mb-1">
+                Source IP
+              </label>
+              <input
+                id="source-ip-filter"
+                v-model="filters.sourceIp"
+                type="text"
+                placeholder="203.0.113.5"
                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
                 @input="debouncedFilter"
               />
@@ -170,6 +183,7 @@ const error = ref<string | null>(null);
 const filters = reactive<ReportsFilters>({
   domain: '',
   orgName: '',
+  sourceIp: '',
   page: 1,
   limit: 25,
   sortBy: 'startDate',
@@ -255,6 +269,7 @@ const applyFilters = () => {
 const clearFilters = () => {
   filters.domain = '';
   filters.orgName = '';
+  filters.sourceIp = '';
   filters.page = 1;
   filters.limit = 25;
   sync();
@@ -266,7 +281,7 @@ const refreshData = () => {
 };
 
 // The query is read back into `filters` at setup, so the first load already reflects the URL.
-const { sync } = useQueryFilters(filters, ['domain', 'orgName', 'page', 'limit', 'sortBy', 'sortOrder'], loadReports);
+const { sync } = useQueryFilters(filters, ['domain', 'orgName', 'sourceIp', 'page', 'limit', 'sortBy', 'sortOrder'], loadReports);
 
 // Utility functions
 const formatDate = (dateString: string): string => {

@@ -18,7 +18,7 @@
             <!-- Inline links are the daily working set, text only. The row used to hold
                  all seven links with an icon each, and the icons are what pushed it into
                  the right-hand group below ~1200px. -->
-            <div class="hidden lg:flex lg:ml-6 lg:items-center lg:space-x-6 min-w-0">
+            <div class="hidden lg:flex lg:ml-6 lg:items-center lg:space-x-5 xl:space-x-6 min-w-0">
               <router-link
                 v-for="link in primaryNavLinks"
                 :key="link.to"
@@ -86,6 +86,26 @@
               <span class="sr-only">{{ healthLabel }}</span>
             </div>
 
+            <!-- Organisation: hidden when there is nothing to switch between. A
+                 superadmin also gets "All organisations". -->
+            <div
+              v-if="state.user && (organizations.length > 1 || isSuperAdmin)"
+              class="hidden md:flex items-center"
+            >
+              <label for="org-switcher" class="sr-only">Organisation</label>
+              <select
+                id="org-switcher"
+                class="rounded-md border border-gray-300 bg-surface px-2 py-1.5 text-sm text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-primary-500"
+                :value="activeOrganizationId ?? ''"
+                @change="onSwitchOrg"
+              >
+                <option v-if="isSuperAdmin" value="">All organisations</option>
+                <option v-for="org in organizations" :key="org.id" :value="org.id">
+                  {{ org.name }}
+                </option>
+              </select>
+            </div>
+
             <!-- Theme -->
             <button
               type="button"
@@ -109,7 +129,7 @@
                 <!-- The role line is the least informative part of the block, so it is
                      the first thing to drop when the header gets tight. -->
                 <p class="hidden xl:block text-xs text-gray-500">
-                  {{ isAdmin ? 'Administrator' : 'User' }} · Account
+                  {{ roleLabel }} · Account
                 </p>
               </router-link>
               <button @click="signOut" class="btn btn-secondary text-sm">Sign out</button>
@@ -199,14 +219,28 @@ const globalLoading = ref(false);
 
 const route = useRoute();
 const router = useRouter();
-const { state, isAdmin, logout } = useAuth();
+const {
+  state,
+  isAdmin,
+  isOrgAdmin,
+  organizations,
+  activeOrganizationId,
+  isSuperAdmin,
+  switchOrganization,
+  logout,
+} = useAuth();
 
 // The desktop row carries only the daily working set; the rest goes behind "More".
 const primaryNavLinks: NavLink[] = [
   { label: 'Dashboard', to: '/', activeFor: ['Dashboard'] },
   { label: 'Reports', to: '/reports', activeFor: ['Reports', 'ReportDetail'] },
+  // Per-sender view of the same reports: "who is sending as us" is a different question from
+  // "which reports arrived", so it gets its own page.
+  { label: 'Sources', to: '/sources', activeFor: ['Sources'] },
   { label: 'Forensics', to: '/forensics', activeFor: ['Forensics', 'ForensicDetail'] },
   { label: 'Domains', to: '/domains', activeFor: ['Domains'] },
+  // Operational inbox: it is only useful if it is seen without opening a menu.
+  { label: 'Alerts', to: '/alerts', activeFor: ['Alerts'] },
 ];
 
 const accountNavLink: NavLink = { label: 'Account', to: '/account', activeFor: ['Account'] };
@@ -219,6 +253,11 @@ const moreNavLinks = computed<NavLink[]>(() => [
   { label: 'TLS reports', to: '/tls-reports', activeFor: ['TlsRpt'] },
   // The glossary is for everyone: it explains the vocabulary the reports and checks use.
   { label: 'Glossary', to: '/glossary', activeFor: ['Glossary'] },
+  // Per-organisation administration. A superadmin needs one organisation selected for it to
+  // mean anything, so the link waits for that choice.
+  ...(isOrgAdmin.value && (!isSuperAdmin.value || activeOrganizationId.value)
+    ? [{ label: 'Organisation', to: '/organisation', activeFor: ['Organisation'] }]
+    : []),
   ...(isAdmin.value
     ? [
         { label: 'Settings', to: '/admin/settings', activeFor: ['AdminSettings'] },
@@ -247,6 +286,16 @@ branding.load();
 const { theme, nextTheme, setNextTheme } = useTheme();
 
 const userEmail = computed(() => state.user?.email ?? '');
+
+const roleLabel = computed(() => {
+  if (isSuperAdmin.value) return 'Administrator';
+  return state.orgRole === 'admin' ? 'Organisation admin' : 'Viewer';
+});
+
+const onSwitchOrg = (event: Event) => {
+  const value = (event.target as HTMLSelectElement).value;
+  switchOrganization(value || null);
+};
 
 const themeIcons = {
   system: () =>

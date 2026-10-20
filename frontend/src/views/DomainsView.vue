@@ -6,7 +6,7 @@
     >
       <template #actions>
         <button
-          v-if="isAdmin"
+          v-if="isOrgAdmin"
           @click="discover"
           :disabled="discovering"
           class="btn btn-secondary"
@@ -15,7 +15,7 @@
           {{ discovering ? 'Discovering…' : 'Discover domains' }}
         </button>
         <button
-          v-if="isAdmin"
+          v-if="isOrgAdmin"
           @click="checkAll"
           :disabled="checkingAll"
           class="btn btn-primary"
@@ -57,7 +57,7 @@
         @row-click="selectDomain"
       >
         <template #filters>
-          <div v-if="isAdmin" class="flex items-center space-x-2">
+          <div v-if="isOrgAdmin" class="flex items-center space-x-2">
             <input
               v-model="newDomain"
               type="text"
@@ -84,6 +84,15 @@
             </div>
             <p v-if="item.notes" class="text-xs text-gray-500">{{ item.notes }}</p>
           </div>
+        </template>
+
+        <!-- A domain belongs to exactly one organisation; an unowned row is one discovered from
+             a report and not claimed yet. -->
+        <template #cell-organization="{ item }">
+          <span v-if="item.organization" class="text-sm text-gray-700">
+            {{ item.organization.name }}
+          </span>
+          <span v-else class="badge badge-gray">unowned</span>
         </template>
 
         <template #cell-status="{ item }">
@@ -150,6 +159,13 @@
                 Last checked {{ formatRelative(detail.domain.lastCheck?.runAt ?? null) }}
                 <span v-if="detail.domain.lastCheck"> in {{ detail.domain.lastCheck.durationMs }} ms</span>
               </p>
+              <p class="mt-1 text-sm text-gray-500">
+                Organisation:
+                <span v-if="detail.domain.organization" class="font-medium text-gray-700">
+                  {{ detail.domain.organization.name }}
+                </span>
+                <span v-else class="text-gray-500">unowned</span>
+              </p>
               <p v-if="latestChange" class="mt-1 text-sm" :class="latestChange.changed ? 'text-warning-700' : 'text-gray-500'">
                 <template v-if="latestChange.changed">
                   Status changed from {{ latestChange.from }} to {{ latestChange.to }} at the previous
@@ -172,7 +188,7 @@
               <!-- Removal used to live only inside the edit form at the bottom of the panel,
                    which is why it looked as if a domain could be added but never removed. -->
               <button
-                v-if="isAdmin"
+                v-if="isOrgAdmin"
                 type="button"
                 class="btn btn-secondary text-sm text-danger-700"
                 :disabled="removing"
@@ -278,7 +294,7 @@
             />
 
             <!-- Admin controls -->
-            <div v-if="isAdmin" class="card">
+            <div v-if="isOrgAdmin" class="card">
               <div class="card-header">
                 <h3 class="text-lg leading-6 font-medium text-gray-900">Settings</h3>
                 <p class="mt-1 text-sm text-gray-500">Only administrators can change these</p>
@@ -337,6 +353,50 @@
                     Off keeps the domain and its history but leaves it out of the background check.
                   </p>
                 </div>
+                <!-- Applies on change rather than with the Save button below: it is a separate
+                     decision from the check settings, and the plan underneath has to be re-read. -->
+                <div>
+                  <label for="dns-account" class="block text-sm font-medium text-gray-700 mb-1">
+                    DNS account
+                  </label>
+                  <select
+                    id="dns-account"
+                    v-model="edit.dnsAccountId"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500 disabled:bg-gray-100 disabled:text-gray-500"
+                    :disabled="savingDnsAccount || orgDnsAccountsLoading || !detail.domain.organization"
+                    @change="saveDnsAccount"
+                  >
+                    <option value="">
+                      Auto — any enabled account of the organisation
+                    </option>
+                    <option
+                      v-for="account in offerableDnsAccounts"
+                      :key="account.id"
+                      :value="account.id"
+                    >
+                      {{ account.label }} ({{ account.provider }}{{ account.enabled ? '' : ', disabled' }})
+                    </option>
+                  </select>
+                  <p class="mt-1 text-xs text-gray-500">
+                    Which credentials the DNS records panel reads and writes this domain's zone
+                    with. Auto prefers a Cloudflare account and falls back to the instance
+                    credentials in Settings → DNS when the organisation has none.
+                  </p>
+                  <p
+                    v-if="!detail.domain.organization"
+                    class="mt-1 text-xs text-warning-700"
+                  >
+                    This domain has no organisation yet, so there is no account to assign it to.
+                  </p>
+                  <p
+                    v-else-if="!orgDnsAccountsLoading && enabledDnsAccounts.length === 0"
+                    class="mt-1 text-xs text-gray-500"
+                  >
+                    This organisation has no enabled DNS account yet. Add one under
+                    Organisation → DNS accounts.
+                  </p>
+                  <p v-if="savingDnsAccount" class="mt-1 text-xs text-gray-500">Saving…</p>
+                </div>
                 <div>
                   <label for="domain-notes" class="block text-sm font-medium text-gray-700 mb-1">
                     Notes
@@ -368,6 +428,331 @@
           </div>
         </div>
 
+        <!-- What has to be published for reports to arrive, and (admins) what this instance
+             would change in the zone. Kept apart from the check results: the ingest address is
+             the half of DMARC that lives in DNS but never shows up in a report. -->
+        <div class="grid grid-cols-1 gap-6" :class="{ 'lg:grid-cols-3': isOrgAdmin }">
+          <div class="card" :class="{ 'lg:col-span-1': isOrgAdmin }">
+            <div class="card-header">
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <h3 class="text-lg leading-6 font-medium text-gray-900">Ingest address</h3>
+                  <p class="mt-1 text-sm text-gray-500">
+                    What a domain owner publishes so reports reach this instance
+                  </p>
+                </div>
+                <StatusBadge
+                  v-if="ingest"
+                  :status="ingest.verified ? 'verified' : 'unverified'"
+                  :label="ingest.verified ? 'Receiving' : 'No reports yet'"
+                  icon
+                />
+              </div>
+            </div>
+            <div class="card-body space-y-3">
+              <p v-if="ingestLoading && !ingest" class="text-sm text-gray-500">Loading…</p>
+              <p v-else-if="ingestError" class="text-sm text-danger-700">{{ ingestError }}</p>
+              <template v-else-if="ingest">
+                <div
+                  v-for="entry in ingestEntries"
+                  :key="entry.key"
+                  class="group flex items-start gap-2"
+                >
+                  <span
+                    class="w-9 shrink-0 pt-0.5 text-xs font-medium uppercase tracking-wider text-gray-500"
+                  >
+                    {{ entry.key }}
+                  </span>
+                  <code
+                    v-if="entry.value"
+                    class="min-w-0 flex-1 break-all font-mono text-xs text-gray-700"
+                    >{{ entry.value }}</code
+                  >
+                  <span v-else class="min-w-0 flex-1 text-xs text-gray-400">not configured</span>
+                  <CopyButton
+                    v-if="entry.value"
+                    :value="entry.value"
+                    :label="`${entry.key} address`"
+                  />
+                </div>
+
+                <p class="text-sm text-gray-600">
+                  <span class="nums font-medium text-gray-900">{{ ingest.reports30d ?? 0 }}</span>
+                  report(s) in the last 30 days · last report
+                  {{ formatRelative(ingest.lastReportAt) }}
+                </p>
+
+                <p
+                  v-if="!ingest.configured"
+                  class="rounded-md bg-warning-50 p-3 text-xs text-warning-800"
+                >
+                  No mailbox address is configured for this instance, so there is nothing to publish
+                  yet. Set it under Settings → Mailbox.
+                </p>
+
+                <p class="text-xs text-gray-500">
+                  Publish it as <code class="font-mono">rua=mailto:…</code> in the domain's
+                  <code class="font-mono">_dmarc</code> TXT record. The counts only move once a report
+                  for this domain actually arrives.
+                </p>
+              </template>
+            </div>
+          </div>
+
+          <!-- Admin only: it reads and writes the provider's zone, which is a change outside this
+               app. The plan is read on demand, not on every selection, because each read is
+               several Cloudflare round-trips. -->
+          <div v-if="isOrgAdmin" class="card lg:col-span-2">
+            <div class="card-header flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 class="text-lg leading-6 font-medium text-gray-900">DNS records</h3>
+                <p class="mt-1 text-sm text-gray-500">
+                  What this instance would publish for {{ detail.domain.name }} through the
+                  configured DNS provider (Cloudflare or Loopia). Nothing is written until you
+                  press Apply.
+                </p>
+              </div>
+              <button class="btn btn-secondary text-sm" :disabled="dnsLoading" @click="loadDnsPlan">
+                {{ dnsLoading ? 'Reading zone…' : dnsPlan ? 'Re-check zone' : 'Check zone' }}
+              </button>
+            </div>
+
+            <div class="card-body space-y-4">
+              <p v-if="dnsError" class="rounded-md bg-danger-50 p-3 text-sm text-danger-700">
+                {{ dnsError }}
+              </p>
+              <p v-else-if="dnsLoading && !dnsPlan" class="text-sm text-gray-500">
+                Reading the zone from Cloudflare…
+              </p>
+              <p v-else-if="!dnsPlan" class="text-sm text-gray-500">
+                The plan is read from the provider on demand: press
+                <span class="font-medium">Check zone</span> to compare what is published with the
+                suggested records. This needs a Cloudflare token or Loopia credentials in
+                Settings → dns.
+              </p>
+
+              <template v-if="dnsPlan">
+                <ul
+                  v-if="(dnsPlan.warnings ?? []).length"
+                  class="list-inside list-disc rounded-md bg-warning-50 p-3"
+                >
+                  <li
+                    v-for="(warning, index) in dnsPlan.warnings"
+                    :key="index"
+                    class="text-xs text-warning-800"
+                  >
+                    {{ warning }}
+                  </li>
+                </ul>
+
+                <p class="text-xs text-gray-500">
+                  Provider <span class="font-medium capitalize">{{ dnsPlan.provider }}</span>
+                  <span v-if="dnsPlan.account?.label">
+                    · account <span class="font-medium">{{ dnsPlan.account.label }}</span>
+                  </span>
+                  <span v-if="dnsPlan.zone">
+                    · zone <span class="font-mono">{{ dnsPlan.zone.name }}</span>
+                  </span>
+                  <span v-else>· no zone found, so nothing can be applied</span>
+                </p>
+
+                <div class="overflow-x-auto">
+                  <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                      <tr>
+                        <th
+                          scope="col"
+                          class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                        >
+                          Apply
+                        </th>
+                        <th
+                          scope="col"
+                          class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                        >
+                          Record
+                        </th>
+                        <th
+                          scope="col"
+                          class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                        >
+                          Type
+                        </th>
+                        <th
+                          scope="col"
+                          class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                        >
+                          Name
+                        </th>
+                        <th
+                          scope="col"
+                          class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                        >
+                          Value
+                        </th>
+                        <th
+                          scope="col"
+                          class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                        >
+                          Published
+                        </th>
+                        <th
+                          scope="col"
+                          class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                        >
+                          Action
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 bg-surface">
+                      <tr v-for="record in dnsPlan.records" :key="record.key">
+                        <td class="px-3 py-3 align-top">
+                          <input
+                            :id="`dns-key-${record.key}`"
+                            type="checkbox"
+                            class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                            :checked="dnsSelected.includes(record.key)"
+                            :disabled="!dnsSelectable(record) || dnsApplying"
+                            :title="
+                              dnsSelectable(record)
+                                ? `Apply: ${record.action}`
+                                : record.reason || 'This record cannot be applied here'
+                            "
+                            :aria-label="`Apply ${record.label || record.key}`"
+                            @change="
+                              toggleDnsKey(record.key, ($event.target as HTMLInputElement).checked)
+                            "
+                          />
+                        </td>
+                        <td class="px-3 py-3 align-top text-sm text-gray-900">
+                          {{ record.label || record.key }}
+                        </td>
+                        <td class="px-3 py-3 align-top text-sm text-gray-600">
+                          {{ record.type }}
+                        </td>
+                        <td class="px-3 py-3 align-top font-mono text-xs text-gray-700">
+                          {{ record.name }}
+                        </td>
+                        <td class="px-3 py-3 align-top">
+                          <code class="block max-w-md break-all font-mono text-xs text-gray-700">{{
+                            record.value
+                          }}</code>
+                        </td>
+                        <td class="px-3 py-3 align-top">
+                          <p
+                            v-if="(record.current ?? []).length === 0"
+                            class="text-xs text-gray-400"
+                          >
+                            nothing published
+                          </p>
+                          <p
+                            v-for="(current, index) in record.current ?? []"
+                            :key="index"
+                            class="max-w-md break-all font-mono text-xs text-gray-500"
+                          >
+                            {{ current }}
+                          </p>
+                        </td>
+                        <td class="px-3 py-3 align-top">
+                          <span class="badge" :class="dnsActionBadge(record.action)">
+                            {{ dnsActionLabel(record.action) }}
+                          </span>
+                          <p v-if="record.reason" class="mt-1 max-w-xs text-xs text-gray-500">
+                            {{ record.reason }}
+                          </p>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div
+                  class="flex flex-col gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <label class="inline-flex cursor-pointer items-center">
+                      <input
+                        v-model="dnsOverwrite"
+                        type="checkbox"
+                        class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        aria-describedby="dns-overwrite-hint"
+                      />
+                      <span class="ml-2 text-sm text-gray-700">Overwrite existing records</span>
+                    </label>
+                    <p id="dns-overwrite-hint" class="mt-1 max-w-lg text-xs text-gray-500">
+                      Without it, only missing records are created and an existing one is skipped.
+                      With it, the matching record is replaced — never anything else at the same
+                      name.
+                    </p>
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button
+                      class="btn btn-secondary text-sm"
+                      :disabled="ruaAdding"
+                      :class="{ 'opacity-50 cursor-not-allowed': ruaAdding }"
+                      @click="addDmarcRua"
+                    >
+                      {{ ruaAdding ? 'Adding…' : 'Add rua to DMARC' }}
+                    </button>
+                    <button
+                      class="btn btn-primary text-sm"
+                      :disabled="dnsApplying || dnsSelected.length === 0"
+                      :class="{ 'opacity-50 cursor-not-allowed': dnsApplying || dnsSelected.length === 0 }"
+                      @click="applyDns"
+                    >
+                      {{ dnsApplying ? 'Applying…' : `Apply ${dnsSelected.length} record(s)` }}
+                    </button>
+                  </div>
+                </div>
+
+                <!-- The result is shown even after the plan is re-read, because "skipped" is the
+                     answer an operator most needs to see. -->
+                <div v-if="dnsResult" class="rounded-md bg-surface-muted p-3 text-sm">
+                  <p class="font-medium text-gray-900">
+                    {{ dnsResult.applied?.length ?? 0 }} applied,
+                    {{ dnsResult.skipped?.length ?? 0 }} skipped
+                  </p>
+                  <ul class="mt-1 space-y-1">
+                    <li
+                      v-for="row in dnsResult.applied ?? []"
+                      :key="`applied-${row.key}`"
+                      class="text-xs text-gray-700"
+                    >
+                      <span class="badge badge-success mr-1">{{ row.action }}</span>
+                      <span class="font-mono">{{ row.key }}</span>
+                    </li>
+                    <li
+                      v-for="row in dnsResult.skipped ?? []"
+                      :key="`skipped-${row.key}`"
+                      class="text-xs text-gray-700"
+                    >
+                      <span class="badge badge-warning mr-1">{{ row.reason }}</span>
+                      <span class="font-mono">{{ row.key }}</span>
+                      <span v-if="currentText(row.current)" class="font-mono text-gray-500">
+                        — {{ currentText(row.current) }}</span
+                      >
+                    </li>
+                  </ul>
+                </div>
+
+                <div v-if="ruaResult" class="group rounded-md bg-surface-muted p-3">
+                  <p class="text-xs text-gray-500">DMARC record now:</p>
+                  <div class="flex items-start gap-2">
+                    <code class="min-w-0 flex-1 break-all font-mono text-xs text-gray-700">{{
+                      ruaResult.value
+                    }}</code>
+                    <CopyButton :value="ruaResult.value" label="DMARC record" />
+                  </div>
+                  <p v-if="ruaResult.previous" class="mt-1 break-all font-mono text-xs text-gray-400">
+                    was: {{ ruaResult.previous }}
+                  </p>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
         <!-- Read-only for everyone, admin or not: it is advice about DNS, not a change to this app. -->
         <RecordSuggestionsPanel
           :key="detail.domain.id"
@@ -391,24 +776,31 @@ import StatusBadge from '@/components/StatusBadge.vue';
 import CopyButton from '@/components/CopyButton.vue';
 import RecordSuggestionsPanel from '@/components/RecordSuggestionsPanel.vue';
 import Sparkline from '@/components/Sparkline.vue';
-import { domainsApi } from '@/api/client';
+import { dnsAccountsApi, domainsApi } from '@/api/client';
 import { useAsyncData } from '@/composables/useApi';
 import { useAuth } from '@/composables/useAuth';
 import { useToast } from '@/composables/useToast';
 import { useQueryFilters } from '@/composables/useQueryFilters';
 import type {
+  DmarcRuaResult,
+  DnsAccount,
+  DnsApplyResult,
+  DnsPlan,
+  DnsPlanRecord,
   DomainCheckResult,
   DomainCheckStatus,
   DomainDetail,
   DomainHealthSummary,
   DomainSummary,
+  IngestInfo,
 } from '@/types/api';
 
-const { isAdmin } = useAuth();
+const { isOrgAdmin } = useAuth();
 const toast = useToast();
 
 const columns = [
   { key: 'name', label: 'Domain' },
+  { key: 'organization', label: 'Organisation' },
   { key: 'status', label: 'Status' },
   { key: 'trend', label: 'Trend' },
   { key: 'checks', label: 'Checks' },
@@ -477,7 +869,14 @@ const checkingAll = ref(false);
 const savingEdit = ref(false);
 const removing = ref(false);
 
-const edit = reactive({ dkimSelectors: '', expectedMx: '', monitored: true, notes: '' });
+const edit = reactive({
+  dkimSelectors: '',
+  expectedMx: '',
+  monitored: true,
+  notes: '',
+  /** Empty string is "Auto": the server resolves the organisation's enabled accounts. */
+  dnsAccountId: '',
+});
 
 const statusDot = (status: string): string => {
   if (status === 'ok') return 'bg-success-500';
@@ -563,6 +962,16 @@ const loadDetail = async (id: string) => {
     edit.expectedMx = result.domain.expectedMx.join(', ');
     edit.monitored = result.domain.monitored;
     edit.notes = result.domain.notes ?? '';
+    edit.dnsAccountId = result.domain.dnsAccount?.id ?? '';
+    void loadOrgDnsAccounts(result.domain.organization?.id ?? null);
+
+    // The ingest and DNS panels describe the domain, not the last check, so a re-run of the
+    // check does not have to throw the loaded plan away - only a different domain does.
+    if (dnsPlanDomain.value !== result.domain.name) {
+      resetDnsPanel();
+      dnsPlanDomain.value = result.domain.name;
+    }
+    void loadIngest(result.domain.name);
   } catch (err) {
     detail.value = null;
     detailError.value = err instanceof Error ? err.message : 'Failed to load this domain';
@@ -607,6 +1016,229 @@ const refreshAll = () => {
 const retryDetail = () => {
   if (selectedId.value) {
     loadDetail(selectedId.value);
+  }
+};
+
+// ------------------------------------------------------------------ ingest address
+const ingest = ref<IngestInfo | null>(null);
+const ingestLoading = ref(false);
+const ingestError = ref<string | null>(null);
+
+const loadIngest = async (name: string) => {
+  ingestLoading.value = true;
+  ingestError.value = null;
+
+  try {
+    ingest.value = await domainsApi.ingest(name);
+  } catch (err) {
+    ingest.value = null;
+    ingestError.value = err instanceof Error ? err.message : 'Could not read the ingest address';
+  } finally {
+    ingestLoading.value = false;
+  }
+};
+
+/** Only the addresses the instance actually has; a missing ruf is normal, not an error. */
+const ingestEntries = computed(() =>
+  [
+    { key: 'rua', value: ingest.value?.rua ?? '' },
+    { key: 'ruf', value: ingest.value?.ruf ?? '' },
+  ]
+);
+
+// ------------------------------------------------------------------ DNS accounts (organisation)
+// The selector and the plan are both org-scoped now: a domain publishes through one of its
+// organisation's accounts, or through the instance credentials when the org has none.
+const orgDnsAccounts = ref<DnsAccount[]>([]);
+const orgDnsAccountsLoading = ref(false);
+const savingDnsAccount = ref(false);
+
+const enabledDnsAccounts = computed(() => orgDnsAccounts.value.filter((account) => account.enabled));
+
+/**
+ * What the selector offers: every enabled account, plus the one already assigned even if it has
+ * since been disabled. Leaving that one out would show "Auto" for a domain that is pinned to it,
+ * which is the opposite of what the server would do.
+ */
+const offerableDnsAccounts = computed(() => {
+  const assignedId = detail.value?.domain.dnsAccount?.id ?? null;
+  return orgDnsAccounts.value.filter((account) => account.enabled || account.id === assignedId);
+});
+
+/**
+ * Only an org admin can read the organisation's accounts, and only an org admin is offered the
+ * selector, so a viewer never triggers this at all.
+ */
+const loadOrgDnsAccounts = async (organizationId: string | null) => {
+  orgDnsAccounts.value = [];
+  if (!organizationId || !isOrgAdmin.value) return;
+
+  orgDnsAccountsLoading.value = true;
+  try {
+    orgDnsAccounts.value = await dnsAccountsApi.list(organizationId);
+  } catch (err) {
+    orgDnsAccounts.value = [];
+    toast.error(err instanceof Error ? err.message : 'Could not load the organisation DNS accounts');
+  } finally {
+    orgDnsAccountsLoading.value = false;
+  }
+};
+
+/**
+ * Assigning an account is its own request, not part of the settings Save: the plan below is read
+ * with that account, so both the plan and the list have to be re-read as soon as it changes.
+ */
+const saveDnsAccount = async () => {
+  const current = detail.value;
+  if (!current || savingDnsAccount.value) return;
+
+  savingDnsAccount.value = true;
+  const nextId = edit.dnsAccountId || null;
+
+  try {
+    const updated = await domainsApi.update(current.domain.id, { dnsAccountId: nextId });
+    detail.value = { ...current, domain: updated };
+    edit.dnsAccountId = updated.dnsAccount?.id ?? '';
+    toast.success(nextId ? 'DNS account assigned' : 'DNS account set to automatic');
+    // The loaded plan describes the previous account; it cannot be shown as if it still applied.
+    resetDnsPanel();
+    dnsPlanDomain.value = null;
+    await load();
+    void loadOrgDnsAccounts(updated.organization?.id ?? null);
+  } catch (err) {
+    // Put the select back on the stored value: the request was refused, nothing changed.
+    edit.dnsAccountId = current.domain.dnsAccount?.id ?? '';
+    toast.error(err instanceof Error ? err.message : 'Could not assign the DNS account');
+  } finally {
+    savingDnsAccount.value = false;
+  }
+};
+
+// ------------------------------------------------------------------ DNS plan (Cloudflare)
+const dnsPlan = ref<DnsPlan | null>(null);
+const dnsPlanDomain = ref<string | null>(null);
+const dnsLoading = ref(false);
+const dnsError = ref<string | null>(null);
+const dnsApplying = ref(false);
+const dnsSelected = ref<string[]>([]);
+const dnsOverwrite = ref(false);
+const dnsResult = ref<DnsApplyResult | null>(null);
+const ruaAdding = ref(false);
+const ruaResult = ref<DmarcRuaResult | null>(null);
+
+const resetDnsPanel = () => {
+  dnsPlan.value = null;
+  dnsError.value = null;
+  dnsResult.value = null;
+  ruaResult.value = null;
+  dnsSelected.value = [];
+  dnsOverwrite.value = false;
+};
+
+/** Only these two can be written; `unchanged` needs nothing and `unsupported` must not be sent. */
+const dnsSelectable = (record: DnsPlanRecord): boolean =>
+  record.action === 'create' || record.action === 'update';
+
+const DNS_ACTION_LABELS: Record<string, string> = {
+  create: 'Create',
+  update: 'Update',
+  unchanged: 'Unchanged',
+  unsupported: 'Unsupported',
+};
+
+const dnsActionLabel = (action: string): string => DNS_ACTION_LABELS[action] ?? action;
+
+const dnsActionBadge = (action: string): string => {
+  if (action === 'create') return 'badge-success';
+  if (action === 'update') return 'badge-warning';
+  if (action === 'unsupported') return 'badge-danger';
+  return 'badge-gray';
+};
+
+const toggleDnsKey = (key: string, checked: boolean) => {
+  const next = new Set(dnsSelected.value);
+  if (checked) {
+    next.add(key);
+  } else {
+    next.delete(key);
+  }
+  dnsSelected.value = [...next];
+};
+
+const currentText = (current: string | string[] | null | undefined): string => {
+  if (!current) return '';
+  return Array.isArray(current) ? current.join(', ') : current;
+};
+
+const loadDnsPlan = async () => {
+  const current = detail.value;
+  if (!current) return;
+
+  dnsLoading.value = true;
+  dnsError.value = null;
+  dnsResult.value = null;
+
+  try {
+    const plan = await domainsApi.dnsPlan(current.domain.name);
+    dnsPlan.value = plan;
+    // Preselect what Apply can actually do, so the common case is one click.
+    dnsSelected.value = (plan.records ?? []).filter(dnsSelectable).map((record) => record.key);
+  } catch (err) {
+    dnsPlan.value = null;
+    dnsSelected.value = [];
+    dnsError.value = err instanceof Error ? err.message : 'Could not read the DNS plan';
+  } finally {
+    dnsLoading.value = false;
+  }
+};
+
+const applyDns = async () => {
+  const current = detail.value;
+  if (!current || dnsSelected.value.length === 0) return;
+
+  dnsApplying.value = true;
+  dnsError.value = null;
+
+  try {
+    const result = await domainsApi.dnsApply(current.domain.name, {
+      keys: [...dnsSelected.value],
+      overwrite: dnsOverwrite.value,
+    });
+    const applied = result.applied?.length ?? 0;
+    const skipped = result.skipped?.length ?? 0;
+    const message = `${applied} record(s) applied, ${skipped} skipped`;
+    if (skipped > 0) {
+      toast.error(message);
+    } else {
+      toast.success(message);
+    }
+
+    // Re-read the zone so the table reflects what is published now, then show the run report.
+    await loadDnsPlan();
+    dnsResult.value = result;
+  } catch (err) {
+    dnsError.value = err instanceof Error ? err.message : 'Could not apply the records';
+  } finally {
+    dnsApplying.value = false;
+  }
+};
+
+const addDmarcRua = async () => {
+  const current = detail.value;
+  if (!current) return;
+
+  ruaAdding.value = true;
+  dnsError.value = null;
+
+  try {
+    ruaResult.value = await domainsApi.dmarcRua(current.domain.name);
+    toast.success('rua= added to the DMARC record');
+    // The ingest card and the plan both change: the published value is what rua= is for.
+    await Promise.all([loadDnsPlan(), loadIngest(current.domain.name)]);
+  } catch (err) {
+    dnsError.value = err instanceof Error ? err.message : 'Could not add the rua address';
+  } finally {
+    ruaAdding.value = false;
   }
 };
 
@@ -737,6 +1369,9 @@ const removeDomain = async () => {
     selectedId.value = null;
     detail.value = null;
     selection.domain = '';
+    dnsPlanDomain.value = null;
+    resetDnsPanel();
+    ingest.value = null;
     sync();
     toast.success(`Removed ${name}`);
     await load();
