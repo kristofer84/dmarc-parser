@@ -13,7 +13,7 @@ import {
   requireAuth,
   type AuthenticatedRequest,
 } from '../middleware/auth.js';
-import { pathParam } from '../utils/requestParams.js';
+import { pathParam, queryParam } from '../utils/requestParams.js';
 
 const router = express.Router();
 
@@ -32,7 +32,20 @@ export interface ReportSummary {
   policyAction: string;
 }
 
+export interface ReportAuthEntry {
+  domain: string;
+  result: string;
+}
+
 export interface DetailedReport extends ReportSummary {
+  /// `policy_published`, as stored at ingestion. All null on rows that predate the columns.
+  policy: {
+    p: string | null;
+    sp: string | null;
+    pct: number | null;
+    adkim: string | null;
+    aspf: string | null;
+  };
   records: Array<{
     id: string;
     sourceIp: string;
@@ -41,7 +54,34 @@ export interface DetailedReport extends ReportSummary {
     dkim: string;
     spf: string;
     headerFrom: string;
+    /// The receiver's raw auth_results lists, already parsed from the JSON columns.
+    dkimAuth: ReportAuthEntry[];
+    spfAuth: ReportAuthEntry[];
   }>;
+}
+
+/** Column is JSON text; a row written before the column existed, or corrupted text, is empty. */
+function parseAuthEntries(raw: string | null | undefined): ReportAuthEntry[] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter(
+        (entry): entry is ReportAuthEntry =>
+          typeof entry === 'object' &&
+          entry !== null &&
+          typeof (entry as ReportAuthEntry).domain === 'string' &&
+          typeof (entry as ReportAuthEntry).result === 'string',
+      )
+      .map((entry) => ({ domain: entry.domain, result: entry.result }));
+  } catch {
+    return [];
+  }
 }
 
 // GET /reports - List all reports with optional filtering and pagination
@@ -58,6 +98,9 @@ router.get('/',
 
       const domain = req.query.domain as string;
       const orgName = req.query.orgName as string;
+      // Matches any report that has at least one record from this IP - that is what the
+      // sources view links to. Exact match: the value comes from a source row, not a search box.
+      const sourceIp = queryParam(req, 'sourceIp');
       const sortBy = req.query.sortBy as string || 'startDate';
       const sortOrder = req.query.sortOrder as string || 'desc';
 
@@ -93,6 +136,18 @@ router.get('/',
         conditions.push(`LOWER(domain) IN (${placeholders})`);
         conditionsWithAlias.push(`LOWER(r.domain) IN (${placeholders})`);
         queryParams.push(...scope);
+      }
+
+      // The count query selects from `reports` without the `r` alias, so the two EXISTS
+      // clauses differ only in how the outer row is referenced.
+      if (sourceIp) {
+        conditions.push(
+          'EXISTS (SELECT 1 FROM records sr WHERE sr.reportId = reports.id AND sr.sourceIp = ?)',
+        );
+        conditionsWithAlias.push(
+          'EXISTS (SELECT 1 FROM records sr WHERE sr.reportId = r.id AND sr.sourceIp = ?)',
+        );
+        queryParams.push(sourceIp);
       }
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -282,6 +337,13 @@ router.get('/:id',
         spfPassRate: totalMessages > 0 ? Math.round((spfPassCount / totalMessages) * 100) : 0,
         dkimPassRate: totalMessages > 0 ? Math.round((dkimPassCount / totalMessages) * 100) : 0,
         policyAction: primaryDisposition,
+        policy: {
+          p: report.policyP,
+          sp: report.policySp,
+          pct: report.policyPct,
+          adkim: report.policyAdkim,
+          aspf: report.policyAspf,
+        },
         records: report.records.map(record => ({
           id: record.id,
           sourceIp: record.sourceIp,
@@ -290,6 +352,8 @@ router.get('/:id',
           dkim: record.dkim,
           spf: record.spf,
           headerFrom: record.headerFrom,
+          dkimAuth: parseAuthEntries(record.dkimAuth),
+          spfAuth: parseAuthEntries(record.spfAuth),
         })),
       };
 

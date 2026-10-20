@@ -19,7 +19,7 @@ export interface SettingDefinition {
   default: string;
   label: string;
   description: string;
-  category: 'forensics' | 'processing' | 'auth' | 'domains' | 'mailbox' | 'branding' | 'data';
+  category: 'forensics' | 'processing' | 'auth' | 'domains' | 'dns' | 'alerts' | 'mailbox' | 'branding' | 'data';
   min?: number;
   max?: number;
   /** Never returned to a client; the UI shows whether a value is stored instead. */
@@ -98,6 +98,97 @@ export const SETTINGS: SettingDefinition[] = [
     category: 'domains',
   },
   {
+    key: 'dns.provider',
+    type: 'string',
+    default: 'auto',
+    label: 'DNS provider',
+    description:
+      'Which API "Apply to DNS" writes through. auto (the default) tries only the providers whose credentials are configured, Cloudflare first, and uses the one that holds the domain. Pin it when both accounts could contain the same name.',
+    category: 'dns',
+    pattern: /^(auto|cloudflare|loopia)$/i,
+  },
+  {
+    key: 'dns.cloudflare.token',
+    type: 'string',
+    default: '',
+    label: 'Cloudflare API token',
+    description:
+      'API token scoped to Zone -> DNS -> Edit for the zones you want this app to write to. Used by "Apply to DNS" on a domain; a token that cannot see a zone simply leaves that domain on the copy-paste path. CLOUDFLARE_API_TOKEN in the environment takes precedence. Stored in the database, like the mailbox password.',
+    category: 'dns',
+    secret: true,
+  },
+  {
+    key: 'dns.loopia.username',
+    type: 'string',
+    default: '',
+    label: 'Loopia API user',
+    description:
+      'The Loopia API user (for example pi@loopiaapi), not the customer login. The account must hold the domains you want to write to. LOOPIA_API_USER in the environment takes precedence.',
+    category: 'dns',
+  },
+  {
+    key: 'dns.loopia.password',
+    type: 'string',
+    default: '',
+    label: 'Loopia API password',
+    description:
+      'Password for the Loopia API user. Sent with every XML-RPC call, so it is stored in the database like the mailbox password; LOOPIA_API_PASS in the environment takes precedence. Loopia rate-limits its API per minute - the app retries twice, then asks you to wait.',
+    category: 'dns',
+    secret: true,
+  },
+  {
+    key: 'alerts.enabled',
+    type: 'boolean',
+    default: 'true',
+    label: 'Evaluate alerts',
+    description:
+      'Every 15 minutes: records a sender never seen before for a domain, and a failure rate above the threshold. Off stops new findings; existing alerts stay until acknowledged or pruned by retention.',
+    category: 'alerts',
+  },
+  {
+    key: 'alerts.failureSpikePercent',
+    type: 'number',
+    default: '20',
+    min: 1,
+    max: 100,
+    label: 'Failure rate that counts as a spike (%)',
+    description:
+      'Share of messages failing the policy-evaluated DKIM *and* SPF checks over the last 24 hours, for a domain with at least the minimum volume below.',
+    category: 'alerts',
+  },
+  {
+    key: 'alerts.minMessages',
+    type: 'number',
+    default: '50',
+    min: 1,
+    max: 1000000,
+    label: 'Minimum messages before a spike counts',
+    description:
+      'A small domain can show 100% failure from one message. This floor keeps the alert meaningful.',
+    category: 'alerts',
+  },
+  {
+    key: 'alerts.cooldownHours',
+    type: 'number',
+    default: '12',
+    min: 1,
+    max: 720,
+    label: 'Repeat the same alert after (hours)',
+    description:
+      'A continuing finding is recorded again only after this long, so an unchanged spike does not produce a row every scan.',
+    category: 'alerts',
+  },
+  {
+    key: 'alerts.webhookUrl',
+    type: 'string',
+    default: '',
+    label: 'Webhook URL for new alerts',
+    description:
+      'Optional. Each new alert is POSTed once as JSON. Must be https://; the endpoint receives domain names, source IPs and counts. Empty disables delivery. Delivery is best effort - a failed POST does not retry and does not delete the in-app alert.',
+    category: 'alerts',
+    pattern: /^$|^https:\/\/\S+$/,
+  },
+  {
     key: 'mailbox.host',
     type: 'string',
     default: '',
@@ -169,6 +260,15 @@ export const SETTINGS: SettingDefinition[] = [
     label: 'Allow self-registration',
     description:
       'Off: only an admin can create accounts, and a new account sees no domains until an admin assigns one. On: anyone who can reach the login page can create a (domain-less) account.',
+    category: 'auth',
+  },
+  {
+    key: 'auth.orgSignupOpen',
+    type: 'boolean',
+    default: 'false',
+    label: 'Allow organisation self-signup',
+    description:
+      'Off: only an instance administrator creates organisations. On: the sign-in page offers "Create an organisation", and the creator becomes its first admin. A new organisation starts empty - it has no reports until it adds a mailbox; domain ownership still follows ingestion.',
     category: 'auth',
   },
   {

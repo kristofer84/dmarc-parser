@@ -51,6 +51,49 @@ export interface DmarcRecord {
   };
 }
 
+/**
+ * What the database stores for one report, in the shape `prisma.report.create` accepts.
+ *
+ * `policyP`/`policySp`/`policyPct`/`policyAdkim`/`policyAspf` come from `policy_published`: they
+ * record what receivers were actually told to do, which cannot be derived from the verdicts
+ * afterwards. They are nullable because rows ingested before those columns existed have no
+ * source to backfill from (the raw XML is not kept).
+ */
+export interface ReportDbData {
+  domain: string;
+  reportId: string;
+  orgName: string;
+  email: string;
+  startDate: Date;
+  endDate: Date;
+  policyP: string | null;
+  policySp: string | null;
+  policyPct: number | null;
+  policyAdkim: string | null;
+  policyAspf: string | null;
+}
+
+/** One `auth_results/dkim` or `auth_results/spf` entry, spelled exactly as the receiver sent it. */
+export interface AuthResultEntry {
+  domain: string;
+  result: string;
+}
+
+/**
+ * One record row as stored: the policy-evaluated verdict in `dkim`/`spf`, plus the raw
+ * auth_results lists in `dkimAuth`/`spfAuth` (JSON text in the column).
+ */
+export interface RecordDbData {
+  sourceIp: string;
+  count: number;
+  disposition: string;
+  dkim: string;
+  spf: string;
+  headerFrom: string;
+  dkimAuth: AuthResultEntry[];
+  spfAuth: AuthResultEntry[];
+}
+
 interface ParseOptions {
   filename?: string;
   contentType?: string;
@@ -321,14 +364,7 @@ export class DmarcParser {
     };
   }
 
-  extractRecordsForDb(report: DmarcReport): Array<{
-    sourceIp: string;
-    count: number;
-    disposition: string;
-    dkim: string;
-    spf: string;
-    headerFrom: string;
-  }> {
+  extractRecordsForDb(report: DmarcReport): RecordDbData[] {
     return report.records.map(record => ({
       sourceIp: record.row.sourceIp,
       count: record.row.count,
@@ -336,7 +372,26 @@ export class DmarcParser {
       dkim: record.row.policyEvaluated.dkim,
       spf: record.row.policyEvaluated.spf,
       headerFrom: record.identifiers.headerFrom,
+      dkimAuth: this.authEntries(record.authResults.dkim),
+      spfAuth: this.authEntries(record.authResults.spf),
     }));
+  }
+
+  /**
+   * An auth_results entry without a domain cannot be attributed to anything (xml2js yields an
+   * empty string for a missing element), so it is dropped instead of stored as a blank row.
+   * The result is kept verbatim - `softfail`, `temperror` and friends are the interesting part.
+   */
+  private authEntries(entries: Array<{ domain: string; result: string }> | undefined): AuthResultEntry[] {
+    return (entries ?? [])
+      .map((entry) => ({ domain: (entry.domain ?? '').trim(), result: (entry.result ?? '').trim() }))
+      .filter((entry) => entry.domain.length > 0);
+  }
+
+  /** xml2js reports an absent element as '' rather than undefined; both mean "not published". */
+  private optionalText(value: string | undefined): string | null {
+    const trimmed = (value ?? '').trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
   validateReport(report: DmarcReport): void {
@@ -475,49 +530,29 @@ export class DmarcParser {
   }
 
   transformToDbFormat(report: DmarcReport): {
-    reportData: {
-      domain: string;
-      reportId: string;
-      orgName: string;
-      email: string;
-      startDate: Date;
-      endDate: Date;
-    };
-    records: Array<{
-      sourceIp: string;
-      count: number;
-      disposition: string;
-      dkim: string;
-      spf: string;
-      headerFrom: string;
-    }>;
+    reportData: ReportDbData;
+    records: RecordDbData[];
   } {
     const metadata = this.extractMetadata(report);
+    const policy = report.policyPublished;
     const records = this.extractRecordsForDb(report);
-    
+
     return {
-      reportData: metadata,
+      reportData: {
+        ...metadata,
+        policyP: this.optionalText(policy.p),
+        policySp: this.optionalText(policy.sp),
+        policyPct: typeof policy.pct === 'number' && Number.isFinite(policy.pct) ? policy.pct : null,
+        policyAdkim: this.optionalText(policy.adkim),
+        policyAspf: this.optionalText(policy.aspf),
+      },
       records,
     };
   }
 
   async parseAndValidate(xmlContent: Buffer, options: ParseOptions = {}): Promise<{
-    reportData: {
-      domain: string;
-      reportId: string;
-      orgName: string;
-      email: string;
-      startDate: Date;
-      endDate: Date;
-    };
-    records: Array<{
-      sourceIp: string;
-      count: number;
-      disposition: string;
-      dkim: string;
-      spf: string;
-      headerFrom: string;
-    }>;
+    reportData: ReportDbData;
+    records: RecordDbData[];
   }> {
     try {
       console.log('🔄 Parsing DMARC XML report...');
