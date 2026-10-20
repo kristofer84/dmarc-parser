@@ -71,6 +71,7 @@ hosted fork is not permitted.
 - **Both TLS-RPT transports**: reports arriving by mail are ingested directly; the reports an HTTPS collector stores on the mail host are pulled hourly by a small sync job that lives outside the container (so the app never holds an SSH key)
 - **Organisations (tenants)**: an org owns domains, mailboxes and DNS accounts; members are org admins or viewers; a domain can be claimed once. Public org self-signup is a setting, off by default
 - **Per-organisation mailboxes**: each org ingests through its own IMAP mailbox(es); a report auto-claims its domain for that org, and a report for a domain owned by another org is quarantined rather than exposed. The legacy mailbox keeps working as a virtual mailbox for the Default org
+- **One-click hosted addresses**: generate a plus alias such as `dmarc+a1b2c3@example.com` on an existing mailbox - no MX, catch-all or extra credentials - then optionally publish it as `rua` through the domain's DNS account. Credentials can be tested and their active zones/domains listed before saving
 - **Passkeys and SSO, without giving up passwords**: WebAuthn sign-in, plus OIDC as an identity-only third way in
 - **Persistent audit trail**: who changed what, from where, and whether it worked - with filters, CSV/JSON export and a SHA-256 digest over each export
 - **Data retention**: per-dataset policies for aggregate reports, forensic reports and the audit log, with a preview of exactly what a run would delete

@@ -141,6 +141,11 @@ no mailbox rows. No address ⇒ `409 MAILBOX_NOT_CONFIGURED`.
   policy, not a recommendation to stay there.
 - Replacing the record is provider-appropriate: Cloudflare `PATCH`; Loopia remove-then-add.
 - No mailbox configured ⇒ `409 MAILBOX_NOT_CONFIGURED`.
+- If the target is a **hosted plus address on a different domain** (e.g.
+  `dmarc+token@xcds.net` for `example.com`), RFC 7489 §7.1 also requires
+  `example.com._report._dmarc.xcds.net TXT "v=DMARC1"` on the hosted domain. The app does not
+  create that delegation automatically; the returned value is the DMARC change only, and the UI
+  documents the required record.
 - Audit action `domain.dmarc.rua`.
 
 ## Provider details

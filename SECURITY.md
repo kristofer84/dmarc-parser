@@ -139,6 +139,12 @@ promises about a future refactor.
   credentials are sent in the XML body of every call over HTTPS (the API has no scoped token),
   and its per-minute Fault 429 is retried twice before the request fails with a wait message.
   `docs/dns-apply.md` lists what is deliberately not writable (DS, MTA-STS, CAA, autodiscover).
+- **Hosted addresses are ingestion routing keys, not read credentials.** A one-click address is
+  a plus alias (`dmarc+<token>@example.com`) on an existing mailbox. Knowing it lets someone send
+  mail to that alias; it does not grant access to the organisation's reports, and every message
+  still passes the same authentication parsing, domain-ownership claim and quarantine rules.
+  Tokens are 16 hex characters, unique, and can be disabled or deleted. Publishing the address
+  as `rua` is a separate administrator action through the domain's DNS account.
 - **Tenant data follows the mailbox, not the name typed into a form.** A domain is owned by
   exactly one organisation. Ingestion auto-claims an unowned domain for the org whose mailbox
   received the report; a report for a domain owned by another org is written only as a

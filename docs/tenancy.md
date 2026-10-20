@@ -101,6 +101,45 @@ controls, and claiming a name you control no mail for yields no data. A domain c
 once; a second manual claim answers `409 DOMAIN_OWNED`. A superadmin can move a domain with
 `PATCH /api/domains/:id { orgId }` (`null` unowns it).
 
+### One-click hosted addresses (plus aliases)
+
+An organisation admin can create a **plus alias on a mailbox this instance already ingests**:
+
+```
+dmarc@example.com  →  dmarc+<token>@example.com
+```
+
+No MX, catch-all or per-org IMAP configuration is involved. The receiving mail server delivers
+the plus address into the base mailbox (Postfix/Dovecot use `+` by default in this deployment);
+the app routes the message by the token in `Delivered-To`, `X-Original-To` or `To`. The token is
+a capability to *inject* mail for the organisation, never to read it: scope and
+domain-ownership/quarantine still apply at ingest. `HostedAddress.lastReportAt` is the honest
+"is anything arriving?" indicator.
+
+```
+GET/POST   /api/organizations/:orgId/hosted-addresses
+PATCH/DELETE /api/organizations/:orgId/hosted-addresses/:id
+```
+
+Create body `{ label, baseMailboxId? }`; without a base the org's first enabled mailbox is used,
+falling back to the legacy virtual mailbox for `Default`. No mailbox at all ⇒
+`409 NO_BASE_MAILBOX`. The generated address is returned and listed with its base mailbox,
+enabled state and last report. Publishing it as `rua` is a separate, confirmed action on the
+domain (`POST /api/domains/:name/dmarc/rua { address }`), which merges into the existing DMARC
+record through the org's DNS account.
+
+**External destination check (RFC 7489 §7.1):** if the hosted address's domain differs from the
+policy domain - e.g. `mailto:dmarc+token@xcds.net` in `example.com`'s DMARC record - receivers
+require the destination domain to authorise it:
+
+```
+example.com._report._dmarc.xcds.net.  TXT  "v=DMARC1"
+```
+
+Without that record many reporters discard the report. It lives on the **hosted** domain
+(`xcds.net`), so the instance operator publishes it once per policy domain. A hosted address on
+the org's own mailbox domain avoids the extra record.
+
 ### Mailbox API
 
 All routes are org-admin guarded and audit mutations (`org.mailbox.*` with `orgId`, never the
@@ -116,7 +155,9 @@ POST   /api/organizations/:orgId/mailboxes/:id/test
 
 Serialized: `{ id, label, host, port, user, verifyTls, enabled, passwordSet, lastRunAt,
 lastError, createdAt, updatedAt }`. `PATCH` with a blank/absent password keeps the stored one.
-`test` returns `{ ok, message }` (200 even on failure) and performs one read-only IMAP connect.
+`POST /:id/test` returns `{ ok, message }` (200 even on failure) and performs one read-only IMAP
+connect. `POST /:orgId/mailboxes/test` does the same for **unsaved form values** (`{host, port,
+user, password, verifyTls, id?}`); an `id` lets a blank password fall back to the stored one.
 
 ## DNS accounts (org-owned)
 
@@ -137,7 +178,10 @@ POST   /api/organizations/:orgId/dns-accounts/:id/verify
 
 Serialized: `{ id, label, provider, enabled, credentialSet, domainCount, createdAt, updatedAt }`.
 Provider is immutable after creation; blank credentials keep the stored ones; `verify` makes one
-read-only list call and returns `{ ok, message?, visible? }`. The plan response now carries
+read-only list call and returns `{ ok, message?, visible? }`. For the create/edit form,
+`POST /api/organizations/:orgId/dns-accounts/test` accepts `{ provider, credentials }` before
+anything is saved and returns the **active hosts** the credential can see (Cloudflare zones or
+Loopia domains), so the operator can confirm the scope before storing it. The plan response now carries
 `account: { id, label, provider } | null` (null = legacy credentials) and the UI shows the label.
 DMARC `rua` uses the domain org's first enabled mailbox user, falling back to the legacy mailbox
 for `Default`; `409 MAILBOX_NOT_CONFIGURED` otherwise. See `docs/dns-apply.md`.
@@ -197,5 +241,8 @@ the migration rewrites `orgId` once.
 - `backend/test/dnsAccounts.test.ts` — 22 tests: account CRUD/secret redaction/provider
   immutability/cross-org 404; assigned vs auto account; disabled-account error; org mailbox
   `rua`; plan/apply without network.
+- `backend/test/hostedAddresses.test.ts` — 9 tests: plus-address derivation, token routing,
+  cross-org 404, no-base-mailbox 409, enable/delete, pre-save DNS credential test with visible
+  hosts, mailbox test validation, and refusal of an arbitrary `rua` address.
 - Existing suites (reports, sources, alerts, OIDC, DNS/Cloudflare/Loopia, parsers) pass
   unchanged through the legacy bridges.
