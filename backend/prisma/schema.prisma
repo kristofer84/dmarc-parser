@@ -22,12 +22,28 @@ model Report {
   email           String
   startDate       DateTime
   endDate         DateTime
+  /// The published policy (policy_published), stored rather than dropped: the UI can then say
+  /// what receivers were told to do. Null on rows ingested before these columns existed - the
+  /// raw XML is not kept, so those cannot be backfilled.
+  policyP         String?
+  policySp        String?
+  policyPct       Int?
+  policyAdkim     String?
+  policyAspf      String?
+  /// The tenant and the mailbox row the report arrived through. Null on rows ingested before
+  /// organisations existed (migration backfills the Default org).
+  orgId           String?
+  organization    Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  mailboxId       String?
+  mailbox         OrgMailbox? @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   records         Record[]
   processingLogs  ProcessingLog[]
 
+  @@index([orgId, endDate])
+  @@index([mailboxId])
   @@map("reports")
 }
 
@@ -40,6 +56,11 @@ model Record {
   dkim            String   // pass, fail
   spf             String   // pass, fail
   headerFrom      String
+  /// auth_results/dkim and auth_results/spf as JSON text: [{ domain, result }]. The two columns
+  /// above carry the policy-evaluated verdict; these say which domain and result the receiver
+  /// actually saw, which is what turns "failed" into "signed by the wrong domain".
+  dkimAuth        String   @default("[]")
+  spfAuth         String   @default("[]")
 
   report          Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
@@ -57,9 +78,15 @@ model ProcessingLog {
   report          Report?   @relation(fields: [reportId], references: [id])
   forensicReportId String?
   forensicReport  ForensicReport? @relation(fields: [forensicReportId], references: [id])
+  /// Tenant/mailbox the attachment was fetched from; drives the processing-log scope.
+  orgId           String?
+  organization    Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  mailboxId       String?
+  mailbox         OrgMailbox? @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([status])
+  @@index([orgId, createdAt])
   @@map("processing_logs")
 }
 
@@ -112,6 +139,11 @@ model ForensicReport {
   reportAuthDetail    String?
   sourceMessageId     String?
   sourceMessageUid    Int?
+  /// Tenant/mailbox that ingested the report; see Report.
+  orgId               String?
+  organization        Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  mailboxId           String?
+  mailbox             OrgMailbox? @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -121,6 +153,7 @@ model ForensicReport {
   @@index([arrivalDate])
   @@index([sourceIp])
   @@index([createdAt])
+  @@index([orgId, createdAt])
   @@map("forensic_reports")
 }
 
@@ -128,13 +161,13 @@ model ForensicReport {
 /// whether it worked. Deliberately NOT foreign-keyed to User - deleting an account must not
 /// delete the evidence of what that account did, so the actor is kept as text.
 ///
-/// Nothing in the application updates or deletes these rows; the only deletion is the
-/// retention prune, which is itself audited. That is the honest limit of what an in-process
-/// log can promise: it proves the app never rewrote history, not that an operator with the
-/// database file could not. Exporting on a schedule is what closes that gap.
+/// `orgId` is the tenant the action was taken in; null for instance-level actions (settings,
+/// providers) and for rows written before organisations existed.
 model AuditEvent {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
+  orgId     String?
+  organization Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
   /// Email address of the actor, or 'anonymous' / 'system'.
   actor     String
   actorId   String?
@@ -152,6 +185,7 @@ model AuditEvent {
   @@index([createdAt])
   @@index([action, createdAt])
   @@index([actor, createdAt])
+  @@index([orgId, createdAt])
   @@map("audit_events")
 }
 
@@ -179,11 +213,48 @@ model TlsRptReport {
   policyString    String?
   /// Raw report JSON, size-capped. The record of what the reporter actually sent.
   raw             String?
+  /// Tenant/mailbox that ingested the report; see Report.
+  orgId           String?
+  organization    Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  mailboxId       String?
+  mailbox         OrgMailbox? @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
   createdAt       DateTime @default(now())
 
   @@index([policyDomain, dateEnd])
   @@index([createdAt])
+  @@index([orgId, createdAt])
   @@map("tls_rpt_reports")
+}
+
+/// One thing an operator should look at: a sender never seen before for a domain, or a failure
+/// rate above the configured threshold. `dedupKey` is what makes the recurring scan idempotent -
+/// the same finding is recorded once, not every fifteen minutes. Acknowledging is the only
+/// mutation the UI performs; the evidence itself lives in reports/records.
+model Alert {
+  id             String    @id @default(cuid())
+  createdAt      DateTime  @default(now())
+  orgId          String?
+  organization   Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  /// new_source | failure_spike
+  kind           String
+  /// info | warning | critical
+  severity       String    @default("warning")
+  domain         String
+  sourceIp       String?
+  title          String
+  /// JSON object as text: the numbers behind the finding, so the UI need not recompute them.
+  detail         String?
+  dedupKey       String    @unique
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  /// Set when the webhook accepted the POST; null means no webhook is configured or it failed.
+  deliveredAt    DateTime?
+
+  @@index([createdAt])
+  @@index([domain, createdAt])
+  @@index([acknowledgedAt])
+  @@index([orgId, createdAt])
+  @@map("alerts")
 }
 
 /// Runtime application options, editable from the admin UI.
@@ -219,8 +290,81 @@ model User {
   domains             UserDomain[]
   webauthnCredentials WebAuthnCredential[]
   identities          UserIdentity[]
+  memberships         Membership[]
 
   @@map("users")
+}
+
+/// A tenant. Users join through Membership; every domain belongs to exactly one organisation
+/// (null on a domain discovered from a report but not yet assigned). The instance superadmin
+/// (`User.role = 'admin'`) sees all organisations.
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships Membership[]
+  domains     Domain[]
+  dnsAccounts DnsAccount[]
+  mailboxes   OrgMailbox[]
+  reports     Report[]
+  forensics   ForensicReport[]
+  tlsRpt      TlsRptReport[]
+  processingLogs ProcessingLog[]
+  alerts      Alert[]
+  auditEvents AuditEvent[]
+
+  @@map("organizations")
+}
+
+/// One IMAP mailbox belonging to an organisation. An org can have several (one per brand or
+/// customer). Credentials are stored like the legacy mailbox password and are never returned by
+/// the API. Reports ingested through this row carry its `mailboxId` and the org's `orgId`.
+model OrgMailbox {
+  id          String   @id @default(cuid())
+  orgId       String
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  label       String
+  host        String
+  port        Int      @default(993)
+  user        String
+  password    String
+  verifyTls   Boolean  @default(true)
+  enabled     Boolean  @default(true)
+  /// Last ingestion attempt and its outcome, so the org admin can see a dead mailbox.
+  lastRunAt   DateTime?
+  lastError   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  reports         Report[]
+  forensics       ForensicReport[]
+  tlsRpt          TlsRptReport[]
+  processingLogs  ProcessingLog[]
+
+  @@unique([orgId, label])
+  @@index([orgId])
+  @@map("org_mailboxes")
+}
+
+/// A user's role inside one organisation. `admin` may edit that org's members, domains, DNS
+/// accounts and alerts; `viewer` reads. Instance-wide administration stays on `User.role`.
+model Membership {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orgId     String
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// admin | viewer
+  role      String       @default("viewer")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+  @@map("memberships")
 }
 
 /// An external single-sign-on provider (OIDC). Passwords and passkeys stay the fallback:
@@ -235,6 +379,11 @@ model AuthProvider {
   clientSecret       String
   scopes             String   @default("openid email profile")
   allowAutoProvision Boolean  @default(true)
+  /// Some providers never send `email_verified` at all - Microsoft Entra ID v2.0 among them -
+  /// even though the address comes from the directory rather than the user. With this on, an
+  /// *absent* marker is accepted as verified for this provider. An explicit `email_verified:
+  /// false` is never overridden. Off by default so the strict rule stays the default.
+  trustUnverifiedEmail Boolean @default(false)
   /// JSON array as text; assigned only to users this provider creates.
   defaultDomains     String   @default("[]")
   createdAt          DateTime @default(now())
@@ -322,12 +471,51 @@ model Domain {
   expectedMx    String        @default("[]")
   monitored     Boolean       @default(true)
   notes         String?
+  /// Which DNS account "Apply to DNS" writes through. Null means auto: use any enabled
+  /// account that holds the domain (and, for backwards compatibility, environment settings).
+  dnsAccountId  String?
+  dnsAccount    DnsAccount?   @relation(fields: [dnsAccountId], references: [id], onDelete: SetNull)
+  /// The tenant that owns this domain. Null until assigned (auto-discovered, or created by a
+  /// superadmin without an org). Every report read is scoped through this relation.
+  orgId         String?
+  organization  Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  /// How the domain became owned: report (first ingestion), manual (org admin), migration
+  /// (Default org), or admin (superadmin assignment). Null while unowned.
+  claimedAt     DateTime?
+  claimSource   String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
   checks        DomainCheck[]
 
+  @@index([dnsAccountId])
+  @@index([orgId])
   @@map("domains")
+}
+
+/// A named set of DNS-provider credentials, assignable per domain.
+///
+/// `credentials` is JSON text because the two providers need different fields:
+/// Cloudflare `{ token }`, Loopia `{ username, password }`. It is never returned by the API -
+/// serialization exposes only whether a credential is stored - and it is never written to a log.
+/// The row is admin-managed, like the OIDC client secret and the mailbox password.
+model DnsAccount {
+  id          String   @id @default(cuid())
+  orgId       String
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  label       String
+  /// cloudflare | loopia
+  provider    String
+  enabled     Boolean  @default(true)
+  credentials String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  domains     Domain[]
+
+  @@unique([orgId, label])
+  @@index([orgId])
+  @@map("dns_accounts")
 }
 
 /// One run of the checks, kept so the UI can show what changed since last time.
