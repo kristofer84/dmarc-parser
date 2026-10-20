@@ -13,6 +13,8 @@ import {
   listDnsAccounts,
   updateDnsAccount,
   verifyDnsAccount,
+  verifyDnsCredentials,
+  isDnsAccountProvider,
 } from '../services/dnsAccounts.js';
 import { pathParam } from '../utils/requestParams.js';
 
@@ -183,6 +185,40 @@ router.delete('/:orgId/dns-accounts/:id', async (req: AuthenticatedRequest, res)
     return sendTyped(res, error);
   }
 });
+
+// POST /organizations/:orgId/dns-accounts/test - test *unsaved* credentials and list hosts
+router.post(
+  '/:orgId/dns-accounts/test',
+  verifyLimit,
+  async (req: AuthenticatedRequest, res) => {
+    const orgId = pathParam(req, 'orgId');
+    if (!(await mayAdminister(req, orgId))) {
+      return notFound(res);
+    }
+
+    const provider = req.body?.provider;
+    if (!isDnsAccountProvider(provider)) {
+      return sendError(res, 400, 'VALIDATION_ERROR', 'provider must be cloudflare or loopia');
+    }
+
+    try {
+      // 200 even on a refused credential: the answer is the result, not a transport failure.
+      const result = await verifyDnsCredentials(provider, req.body?.credentials);
+      req.audit = {
+        action: 'dnsAccount.test',
+        target: provider,
+        orgId,
+        detail: { provider, ok: result.ok, visible: result.visible?.length ?? 0 },
+      };
+      return res.json(result);
+    } catch (error) {
+      if (error instanceof Error && 'statusCode' in error) {
+        return sendTyped(res, error);
+      }
+      return sendTyped(res, error);
+    }
+  },
+);
 
 // POST /organizations/:orgId/dns-accounts/:id/verify - one read-only list call
 router.post('/:orgId/dns-accounts/:id/verify', verifyLimit, async (req: AuthenticatedRequest, res) => {

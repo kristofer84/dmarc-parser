@@ -153,7 +153,7 @@ router.post('/:name/dns/apply', requireOrgAdmin, applyLimit, async (req: Authent
 
     const result = await applyDnsPlan(domain, { keys, overwrite });
     console.log(
-      `🌐 ${req.user!.email} applied ${result.applied.length} DNS record(s) to ${domain} via Cloudflare (${result.skipped.length} skipped)`,
+      `🌐 ${req.user!.email} applied ${result.applied.length} DNS record(s) to ${domain} (${result.skipped.length} skipped)`,
     );
     return res.json(result);
   } catch (error) {
@@ -171,7 +171,39 @@ router.post('/:name/dmarc/rua', requireOrgAdmin, ruaLimit, async (req: Authentic
 
     // The organisation's own mailbox wins; the legacy settings mailbox is only used for the
     // Default organisation (or a name nobody owns yet), never for another tenant.
-    const address = (await resolveDmarcMailboxAddress(domain)) ?? '';
+    let address = (await resolveDmarcMailboxAddress(domain)) ?? '';
+
+    // A one-click hosted address may be supplied explicitly, but only one that belongs to the
+    // domain's organisation (or the legacy mailbox address). Never let a caller put another
+    // tenant's address, or an arbitrary string, into a live DMARC record.
+    const requested =
+      typeof req.body?.address === 'string'
+        ? req.body.address.trim().replace(/^mailto:/i, '').toLowerCase()
+        : '';
+    if (requested) {
+      const domainRow = await prisma.domain.findUnique({
+        where: { name: domain },
+        select: { orgId: true },
+      });
+      const ownerOrgId =
+        domainRow?.orgId ?? (req.user!.role === 'admin' ? req.organizationId ?? null : null);
+      const hosted = ownerOrgId
+        ? await prisma.hostedAddress.findFirst({
+            where: { orgId: ownerOrgId, address: requested, enabled: true },
+            select: { address: true },
+          })
+        : null;
+      const legacy = address.toLowerCase();
+      if (!hosted && requested !== legacy) {
+        return sendError(
+          res,
+          400,
+          'INVALID_RUA_ADDRESS',
+          'That address is not an enabled hosted address of this domain\'s organisation',
+        );
+      }
+      address = hosted?.address ?? requested;
+    }
 
     if (!address) {
       return sendError(

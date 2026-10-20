@@ -306,15 +306,19 @@ export interface DnsAccountVerification {
  * Read-only credential check. It performs exactly one list call, which matters for Loopia's
  * per-minute rate limit; it writes nothing and does not touch any zone.
  */
-export async function verifyDnsAccount(orgId: string, id: string): Promise<DnsAccountVerification> {
-  const row = await getDnsAccount(orgId, id);
-  if (!row) {
-    throw new DnsAccountError('DNS account not found', { statusCode: 404, code: 'NOT_FOUND' });
-  }
-  const credentials = parseCredentials(row.provider, row.credentials);
+/**
+ * Read-only credential check used both by the saved-account Verify and by the pre-save
+ * "Test & fetch hosts" form. It performs exactly one list call (Cloudflare zones or Loopia
+ * domains), writes nothing, and returns what the credential can actually see.
+ */
+export async function verifyDnsCredentials(
+  provider: DnsAccountProvider,
+  input: unknown,
+): Promise<DnsAccountVerification> {
+  const credentials = readCredentials(provider, input);
 
   try {
-    if (row.provider === 'cloudflare') {
+    if (provider === 'cloudflare') {
       const token = (credentials as CloudflareCredentials).token;
       const response = await fetch(
         `${(process.env.CLOUDFLARE_API_BASE ?? 'https://api.cloudflare.com/client/v4').replace(/\/$/, '')}/zones?per_page=50`,
@@ -353,4 +357,16 @@ export async function verifyDnsAccount(orgId: string, id: string): Promise<DnsAc
       message: error instanceof Error ? error.message : 'The provider could not be reached',
     };
   }
+}
+
+/** Verify the stored credentials of one account. */
+export async function verifyDnsAccount(
+  orgId: string,
+  id: string,
+): Promise<DnsAccountVerification> {
+  const row = await getDnsAccount(orgId, id);
+  if (!row) {
+    throw new DnsAccountError('DNS account not found', { statusCode: 404, code: 'NOT_FOUND' });
+  }
+  return verifyDnsCredentials(row.provider as DnsAccountProvider, parseCredentials(row.provider, row.credentials));
 }

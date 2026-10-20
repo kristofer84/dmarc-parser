@@ -14,6 +14,11 @@ export interface EmailMessage {
   messageId?: string | null;
   /** Authentication-Results header of the mail itself, if the receiving MTA added one. */
   authenticationResults?: string | null;
+  /**
+   * Envelope recipients, best first: Delivered-To, X-Original-To, X-Rcpt-To, To, Cc. Used only
+   * to route a plus-addressed hosted alias to its organisation.
+   */
+  recipients?: string[];
 }
 
 export interface EmailAttachment {
@@ -485,7 +490,50 @@ export class ImapClient {
       attachments,
       messageId: parsed.messageId ?? null,
       authenticationResults: this.getHeaderText(parsed, 'authentication-results'),
+      recipients: this.collectRecipients(parsed),
     };
+  }
+
+  /**
+   * Addresses that can identify a plus-addressed hosted alias. The delivery headers are set by
+   * the receiving MTA and are not attacker-controlled; `To`/`Cc` are the fallback for mail that
+   * was forwarded in a way that dropped them. Order matters - the first match wins.
+   */
+  private collectRecipients(parsed: ParsedMail): string[] {
+    const found: string[] = [];
+    const collect = (value: string | null | undefined): void => {
+      if (!value) {
+        return;
+      }
+      for (const match of value.matchAll(/[^\s<>,;"]+@[^\s<>,;"]+/g)) {
+        found.push(match[0].toLowerCase().replace(/\.$/, ''));
+      }
+    };
+
+    for (const header of ['delivered-to', 'x-original-to', 'x-rcpt-to']) {
+      collect(this.getHeaderText(parsed, header));
+    }
+
+    const objects = parsed.to === undefined ? [] : Array.isArray(parsed.to) ? parsed.to : [parsed.to];
+    for (const object of objects) {
+      for (const address of object.value ?? []) {
+        if (address.address) {
+          found.push(address.address.toLowerCase());
+        }
+      }
+    }
+    if (parsed.cc) {
+      const ccObjects = Array.isArray(parsed.cc) ? parsed.cc : [parsed.cc];
+      for (const object of ccObjects) {
+        for (const address of object.value ?? []) {
+          if (address.address) {
+            found.push(address.address.toLowerCase());
+          }
+        }
+      }
+    }
+
+    return [...new Set(found)];
   }
 
   /** mailparser hands back a string, an array of strings, or a structured object depending on the header. */

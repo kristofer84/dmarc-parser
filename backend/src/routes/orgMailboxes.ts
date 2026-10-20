@@ -159,6 +159,56 @@ router.delete('/:orgId/mailboxes/:id', async (req: AuthenticatedRequest, res) =>
   return res.json({ ok: true });
 });
 
+// POST /organizations/:orgId/mailboxes/test - test the form's values before saving
+router.post('/:orgId/mailboxes/test', testLimit, async (req: AuthenticatedRequest, res) => {
+  const orgId = pathParam(req, 'orgId');
+  if (!(await requireOrgAdminForOrg(req, res, orgId))) {
+    return;
+  }
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  let stored: Awaited<ReturnType<typeof getOrgMailbox>> = null;
+  if (typeof body.id === 'string' && body.id.length > 0) {
+    stored = await getOrgMailbox(orgId, body.id);
+    if (!stored) {
+      return sendError(res, 404, 'NOT_FOUND', 'Mailbox not found');
+    }
+  }
+
+  const text = (value: unknown, fallback: string): string =>
+    typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+  const host = text(body.host, stored?.host ?? '');
+  const user = text(body.user, stored?.user ?? '');
+  const password =
+    typeof body.password === 'string' && body.password.length > 0
+      ? body.password
+      : stored?.password ?? '';
+  const port =
+    typeof body.port === 'number'
+      ? body.port
+      : typeof body.port === 'string' && body.port.trim()
+        ? Number.parseInt(body.port, 10)
+        : stored?.port ?? 993;
+  const verifyTls =
+    typeof body.verifyTls === 'boolean' ? body.verifyTls : stored?.verifyTls ?? true;
+
+  if (!host || !user || !password) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'host, user and password are required');
+  }
+  if (!Number.isFinite(port) || port < 1 || port > 65535) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'port must be between 1 and 65535');
+  }
+
+  const result = await testMailboxConnection({ host, port, user, password, verifyTls });
+  req.audit = {
+    action: 'org.mailbox.test',
+    target: stored?.label ?? user,
+    orgId,
+    detail: { ok: result.ok },
+  };
+  return res.json(result);
+});
+
 // POST /organizations/:orgId/mailboxes/:id/test - one real IMAP connection, then close
 router.post('/:orgId/mailboxes/:id/test', testLimit, async (req: AuthenticatedRequest, res) => {
   const orgId = pathParam(req, 'orgId');

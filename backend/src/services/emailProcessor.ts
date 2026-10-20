@@ -8,6 +8,13 @@ import { resolveMailboxConfig, type MailboxConfig } from './mailboxConfig.js';
 import { claimOrCheckDomain } from './domainOwnership.js';
 import { getDefaultOrganizationId } from './orgMailboxes.js';
 import {
+  listEnabledHostedAddresses,
+  matchHostedAddress,
+  tokenMap,
+  touchHostedAddress,
+  type HostedAddressRow,
+} from './hostedAddresses.js';
+import {
   recordProcessingSuccess,
   recordProcessingFailure,
   recordScheduledRun,
@@ -30,6 +37,8 @@ export interface IngestContext {
   label?: string;
   /** Required by `processMailbox`, optional elsewhere (a reparse resolves it itself). */
   config?: MailboxConfig | null;
+  /** Set when the current message arrived through a one-click hosted alias. */
+  hostedAddressId?: string | null;
 }
 
 export type ProcessingDetailStatus = 'success' | 'error' | 'skipped' | 'quarantined';
@@ -78,6 +87,11 @@ export class EmailProcessor {
    * sequential (one mailbox at a time) and it is cleared in `finally`.
    */
   private context: IngestContext | null = null;
+  /**
+   * Enabled hosted aliases for the current run, keyed by token. Preloaded once per mailbox
+   * instead of querying per message, and matched against the recipient headers.
+   */
+  private hostedByToken = new Map<string, HostedAddressRow>();
 
   constructor() {
     this.dmarcParser = new DmarcParser();
@@ -140,6 +154,7 @@ export class EmailProcessor {
     const imap = new ImapClient();
 
     this.context = context;
+    this.hostedByToken = tokenMap(await listEnabledHostedAddresses());
 
     try {
       console.log(`🚀 Starting email processing for ${label}...`);
@@ -156,6 +171,7 @@ export class EmailProcessor {
       throw error;
     } finally {
       this.context = null;
+      this.hostedByToken = new Map();
       try {
         await imap.disconnect();
       } catch (error) {
@@ -287,6 +303,7 @@ export class EmailProcessor {
       throw error;
     } finally {
       this.context = null;
+      this.hostedByToken = new Map();
       try {
         await imap.disconnect();
       } catch (error) {
@@ -304,36 +321,56 @@ export class EmailProcessor {
   private async processMessage(message: EmailMessage, result: ProcessingResult): Promise<boolean> {
     console.log(`🔄 Processing message from ${message.from} - ${message.subject}`);
 
-    let hasSuccessfulAttachment = false;
-
-    // Process each attachment. The kind decides the parser, and an unrecognised kind is
-    // recorded rather than skipped in silence - "we received something we did not understand"
-    // is itself a report worth seeing.
-    for (const attachment of message.attachments) {
-      try {
-        const attachmentResult =
-          attachment.kind === 'forensic'
-            ? await this.processForensicAttachment(attachment, message, result)
-            : attachment.kind === 'tlsrpt'
-              ? await this.processTlsRptAttachment(attachment, message, result)
-              : attachment.kind === 'unknown'
-                ? await this.processUnknownAttachment(attachment, message, result)
-                : await this.processAttachment(attachment, message, result);
-
-        if (attachmentResult === 'success' || attachmentResult === 'skipped') {
-          hasSuccessfulAttachment = true;
-        }
-      } catch (error) {
-        console.error(`❌ Failed to process attachment ${attachment.filename}:`, error);
-        result.errors++;
-        result.details.push({
-          status: 'error',
-          message: `Failed to process attachment ${attachment.filename}: ${error}`,
-        });
-      }
+    // A plus-addressed alias overrides the base mailbox's organisation for this message. The
+    // token is only a routing key: the ownership/quarantine checks still run under the alias
+    // organisation, and no read permission is attached to the address.
+    const hosted = matchHostedAddress(message.recipients ?? [], this.hostedByToken);
+    const savedContext = this.context;
+    if (hosted && this.context) {
+      this.context = {
+        ...this.context,
+        orgId: hosted.orgId,
+        hostedAddressId: hosted.id,
+      };
+      console.log(`📨 Hosted address ${hosted.address} → organisation ${hosted.orgId}`);
     }
 
-    return hasSuccessfulAttachment;
+    let hasSuccessfulAttachment = false;
+    try {
+      // Process each attachment. The kind decides the parser, and an unrecognised kind is
+      // recorded rather than skipped in silence - "we received something we did not understand"
+      // is itself a report worth seeing.
+      for (const attachment of message.attachments) {
+        try {
+          const attachmentResult =
+            attachment.kind === 'forensic'
+              ? await this.processForensicAttachment(attachment, message, result)
+              : attachment.kind === 'tlsrpt'
+                ? await this.processTlsRptAttachment(attachment, message, result)
+                : attachment.kind === 'unknown'
+                  ? await this.processUnknownAttachment(attachment, message, result)
+                  : await this.processAttachment(attachment, message, result);
+
+          if (attachmentResult === 'success' || attachmentResult === 'skipped') {
+            hasSuccessfulAttachment = true;
+          }
+        } catch (error) {
+          console.error(`❌ Failed to process attachment ${attachment.filename}:`, error);
+          result.errors++;
+          result.details.push({
+            status: 'error',
+            message: `Failed to process attachment ${attachment.filename}: ${error}`,
+          });
+        }
+      }
+
+      if (hosted && hasSuccessfulAttachment) {
+        await touchHostedAddress(hosted.id);
+      }
+      return hasSuccessfulAttachment;
+    } finally {
+      this.context = savedContext;
+    }
   }
 
   /**

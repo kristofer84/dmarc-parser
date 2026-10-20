@@ -309,6 +309,7 @@ model Organization {
   domains     Domain[]
   dnsAccounts DnsAccount[]
   mailboxes   OrgMailbox[]
+  hostedAddresses HostedAddress[]
   reports     Report[]
   forensics   ForensicReport[]
   tlsRpt      TlsRptReport[]
@@ -317,6 +318,34 @@ model Organization {
   auditEvents AuditEvent[]
 
   @@map("organizations")
+}
+
+/// A one-click hosted address: `<token>@<configured hosted domain>`, routed by the recipient
+/// header when a catch-all delivers it into one of this instance's mailboxes. It carries no
+/// IMAP credentials; the receiving mailbox is whatever already fetches the catch-all. The token
+/// is a capability to *inject* mail for the org, never to read it, and the domain-ownership
+/// rules still apply at ingest.
+model HostedAddress {
+  id           String   @id @default(cuid())
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  label        String
+  /// Random local part. Unique across the instance because routing is by this value.
+  token        String   @unique
+  /// Full address, `<base-user-local>+<token>@<base-user-domain>`; displayed in the UI.
+  address      String   @unique
+  /// The mailbox that receives the plus-address. Null means the legacy mailbox, which is the
+  /// only one the Default organisation has until it adds a real row.
+  baseMailboxId String?
+  baseMailbox   OrgMailbox? @relation(fields: [baseMailboxId], references: [id], onDelete: SetNull)
+  enabled      Boolean  @default(true)
+  lastReportAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([orgId, label])
+  @@index([orgId])
+  @@map("hosted_addresses")
 }
 
 /// One IMAP mailbox belonging to an organisation. An org can have several (one per brand or
@@ -339,6 +368,7 @@ model OrgMailbox {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  hostedAddresses HostedAddress[]
   reports         Report[]
   forensics       ForensicReport[]
   tlsRpt          TlsRptReport[]

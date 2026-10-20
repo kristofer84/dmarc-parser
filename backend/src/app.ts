@@ -19,6 +19,7 @@ import providersRouter from './routes/providers.js';
 import organizationsRouter from './routes/organizations.js';
 import orgMailboxesRouter from './routes/orgMailboxes.js';
 import dnsAccountsRouter from './routes/dnsAccounts.js';
+import hostedAddressesRouter from './routes/hostedAddresses.js';
 import auditRouter from './routes/audit.js';
 import tlsRptRouter from './routes/tlsRpt.js';
 import dnsRouter from './routes/dns.js';
@@ -197,6 +198,7 @@ export function createApp(): express.Application {
   // mounted before the organisations router, whose `/:id/members` etc. do not overlap them.
   app.use('/api/organizations', orgMailboxesRouter);
   app.use('/api/organizations', dnsAccountsRouter);
+  app.use('/api/organizations', hostedAddressesRouter);
   app.use('/api/organizations', organizationsRouter);
 
   // All-in-one image: serve the built SPA from the same origin. The port is then the only
