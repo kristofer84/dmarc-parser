@@ -32,6 +32,16 @@ interface Zone {
   aaaa?: Record<string, string[]>;
   cname?: Record<string, string[]>;
   caa?: Record<string, Array<{ critical: number; issue?: string; issuewild?: string }>>;
+  soa?: Record<string, {
+    nsname: string;
+    hostmaster: string;
+    serial: number;
+    refresh: number;
+    retry: number;
+    expire: number;
+    minttl: number;
+  }>;
+  ns?: Record<string, string[]>;
 }
 
 interface Route {
@@ -52,6 +62,8 @@ function fakeResolver(zone: Zone): DnsResolver {
     resolve6: async (name) => zone.aaaa?.[name] ?? absent(),
     resolveCname: async (name) => zone.cname?.[name] ?? absent(),
     resolveCaa: async (name) => zone.caa?.[name] ?? absent(),
+    resolveSoa: async (name) => zone.soa?.[name] ?? absent(),
+    resolveNs: async (name) => zone.ns?.[name] ?? absent(),
   };
 }
 
@@ -93,6 +105,21 @@ function goodZone(overrides: Partial<Zone> = {}): Zone {
     mx: overrides.mx ?? { [DOMAIN]: [{ exchange: 'mx1.example.com', priority: 10 }] },
     a: overrides.a ?? { 'mx1.example.com': ['192.0.2.10'] },
     caa: overrides.caa ?? { [DOMAIN]: [{ critical: 0, issue: 'letsencrypt.org' }] },
+    ns: overrides.ns ?? { [DOMAIN]: ['ns1.example.com', 'ns2.example.com'] },
+    soa:
+      overrides.soa ??
+      {
+        [DOMAIN]: {
+          nsname: 'ns1.example.com',
+          hostmaster: 'hostmaster.example.com',
+          // 2026-10-19 as a Unix timestamp, the shape Loopia publishes.
+          serial: 1792436223,
+          refresh: 14400,
+          retry: 3600,
+          expire: 1209600,
+          minttl: 86400,
+        },
+      },
     cname: overrides.cname,
     aaaa: overrides.aaaa,
     txt: {
@@ -403,7 +430,7 @@ await test('MX: no record at all is an error, and nothing else is skipped', asyn
   const mx = byId(report.results, 'mx');
   assert.equal(mx.status, 'error');
   assert.match(mx.summary, /cannot receive mail/);
-  assert.equal(report.results.length, 4);
+  assert.equal(report.results.length, 5);
 });
 
 await test('MX: an exchange that does not resolve is a warning', async () => {
@@ -640,6 +667,12 @@ await test('a resolver that fails every query still yields a full report', async
     resolveCaa: async () => {
       throw Object.assign(new Error('queryCaa ESERVFAIL'), { code: 'ESERVFAIL' });
     },
+    resolveSoa: async () => {
+      throw Object.assign(new Error('querySoa ESERVFAIL'), { code: 'ESERVFAIL' });
+    },
+    resolveNs: async () => {
+      throw Object.assign(new Error('queryNs ESERVFAIL'), { code: 'ESERVFAIL' });
+    },
   };
 
   const report = await checkDomain(DOMAIN, {
@@ -653,7 +686,7 @@ await test('a resolver that fails every query still yields a full report', async
   assert.equal(report.status, 'error');
   // Nine checks answer from the resolver plus DNSSEC, which goes over DoH; a failing resolver
   // must not cost the report any of them.
-  assert.equal(report.results.length, 10);
+  assert.equal(report.results.length, 11);
   assert.match(byId(report.results, 'spf').summary, /SERVFAIL/);
   assert.match(byId(report.results, 'dmarc').summary, /SERVFAIL/);
 });
@@ -688,6 +721,63 @@ await test('checkDomain never rejects, whatever the resolver throws', async () =
   });
   assert.ok(report.results.length >= 4);
   assert.ok(report.results.every((result) => typeof result.summary === 'string' && result.summary.length > 0));
+});
+
+await test('SOA: a consistent zone passes, and the serial is named not judged', async () => {
+  const report = await run(goodZone(), { includeOptional: true });
+  const soa = byId(report.results, 'soa');
+  assert.equal(soa.status, 'ok');
+  assert.match(soa.summary, /ns1\.example\.com is the primary/);
+  const details = (soa.details ?? []).join('\n');
+  assert.match(details, /Unix timestamp \(2026-10-19\)/);
+  assert.match(details, /expire: 14 d/);
+});
+
+await test('SOA: a primary that is not in the NS set warns', async () => {
+  const zone = goodZone({ ns: { [DOMAIN]: ['ns2.example.com'] } });
+  const report = await run(zone);
+  const soa = byId(report.results, 'soa');
+  assert.equal(soa.status, 'warn');
+  assert.match(soa.summary, /not one of this zone's NS records/);
+});
+
+await test('SOA: an expire shorter than two refreshes warns', async () => {
+  const zone = goodZone();
+  zone.soa![DOMAIN] = { ...zone.soa![DOMAIN], refresh: 14400, expire: 7200 };
+  const soa = byId((await run(zone)).results, 'soa');
+  assert.equal(soa.status, 'warn');
+  assert.match(soa.summary, /expire/);
+});
+
+await test('SOA: a retry longer than refresh warns', async () => {
+  const zone = goodZone();
+  zone.soa![DOMAIN] = { ...zone.soa![DOMAIN], refresh: 1200, retry: 3600 };
+  const soa = byId((await run(zone)).results, 'soa');
+  assert.equal(soa.status, 'warn');
+  assert.match(soa.summary, /retry/);
+});
+
+await test('SOA: a plain-counter serial is still a pass, with a note', async () => {
+  const zone = goodZone();
+  zone.soa![DOMAIN] = { ...zone.soa![DOMAIN], serial: 4211 };
+  const soa = byId((await run(zone)).results, 'soa');
+  assert.equal(soa.status, 'ok');
+  assert.match((soa.details ?? []).join('\n'), /plain counter/);
+});
+
+await test('SOA: expire outside the 2-4 week band is a note, not a warning', async () => {
+  const zone = goodZone();
+  zone.soa![DOMAIN] = { ...zone.soa![DOMAIN], expire: 604800 };
+  const soa = byId((await run(zone)).results, 'soa');
+  assert.equal(soa.status, 'ok');
+  assert.match((soa.details ?? []).join('\n'), /outside the 2-4 weeks/);
+});
+
+await test('SOA: a missing SOA is an error, not a silent skip', async () => {
+  const zone = goodZone({ soa: {} });
+  const soa = byId((await run(zone)).results, 'soa');
+  assert.equal(soa.status, 'error');
+  assert.match(soa.summary, /no SOA record/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

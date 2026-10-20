@@ -533,6 +533,29 @@ and the full digest for that. The live `xcds.net` keys are pinned as vectors in 
 
 ---
 
+### SOA (Start of Authority)
+
+The zone's header record: `MNAME RNAME SERIAL REFRESH RETRY EXPIRE MINIMUM`
+(RFC 1035 §3.3.13). `RNAME` is the admin mailbox with the first dot standing in for `@`, so
+`registry.loopia.se` means `registry@loopia.se`. `MINIMUM` is the negative-cache TTL
+(RFC 2308), not a refresh interval.
+
+Two numbers generate most of the warnings on "domain health" sites, and both are usually
+noise:
+
+- **Serial format.** RFC 1982 requires only that the value increases. `YYYYMMDDnn` and a Unix
+  timestamp are both conventions; a checker that accepts only the date form calls a perfectly
+  valid timestamp "invalid". Loopia publishes `1792436223` (2026-10-19 as epoch seconds).
+- **Expire out of range.** The common recommendation is 2–4 weeks. `EXPIRE` is how long a
+  *secondary* nameserver keeps serving a zone it cannot refresh; with both nameservers run by
+  one provider it changes nothing. A 1-week value is a provider choice, not a fault.
+
+What is actually wrong, and what `checkSoa` warns about: `MNAME` not being in the zone's `NS`
+set, `EXPIRE` shorter than two `REFRESH` intervals, `RETRY` not shorter than `REFRESH`, zeroed
+timers, an `RNAME` that does not read as a mailbox, and a missing SOA entirely.
+
+---
+
 ## Delivery and display
 
 ### Header From

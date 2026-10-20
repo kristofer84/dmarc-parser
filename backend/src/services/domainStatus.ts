@@ -6,6 +6,8 @@ import {
   resolveCaa,
   resolveCname,
   resolveMx,
+  resolveNs,
+  resolveSoa,
   resolveTxt,
 } from 'node:dns/promises';
 
@@ -65,6 +67,19 @@ export interface DnsResolver {
   resolveCname(name: string): Promise<string[]>;
   /** `issuewild` is not in the minimum shape but is needed to judge wildcard CAA. */
   resolveCaa?(name: string): Promise<CaaRecord[]>;
+  /** Optional, like CAA: a resolver that cannot answer these skips those checks. */
+  resolveSoa?(name: string): Promise<SoaRecord>;
+  resolveNs?(name: string): Promise<string[]>;
+}
+
+export interface SoaRecord {
+  nsname: string;
+  hostmaster: string;
+  serial: number;
+  refresh: number;
+  retry: number;
+  expire: number;
+  minttl: number;
 }
 
 export interface MxRecord {
@@ -422,6 +437,8 @@ interface CheckContext {
   lookupAaaa: ((name: string) => Promise<string[]>) | null;
   lookupCname: (name: string) => Promise<string[]>;
   lookupCaa: (name: string) => Promise<CaaRecord[]>;
+  lookupSoa: ((name: string) => Promise<SoaRecord>) | null;
+  lookupNs: ((name: string) => Promise<string[]>) | null;
 }
 
 function memoize<T>(work: (name: string) => Promise<T>): (name: string) => Promise<T> {
@@ -452,6 +469,8 @@ function createContext(
   const { timeoutMs, resolver } = options;
   const resolve6Fn = resolver.resolve6;
   const resolveCaaFn = resolver.resolveCaa;
+  const resolveSoaFn = resolver.resolveSoa;
+  const resolveNsFn = resolver.resolveNs;
 
   const lookupTxtRaw = memoize((name: string) =>
     withTimeout(resolver.resolveTxt(name), timeoutMs, `TXT ${name}`),
@@ -477,6 +496,12 @@ function createContext(
       : async () => {
           throw new Error('the configured resolver cannot answer CAA queries');
         },
+    lookupSoa: resolveSoaFn
+      ? memoize((name: string) => withTimeout(resolveSoaFn(name), timeoutMs, `SOA ${name}`))
+      : null,
+    lookupNs: resolveNsFn
+      ? memoize((name: string) => withTimeout(resolveNsFn(name), timeoutMs, `NS ${name}`))
+      : null,
   };
 }
 
@@ -1563,8 +1588,167 @@ async function checkDnssec(ctx: CheckContext): Promise<DomainCheckResult[]> {
   ];
 }
 
+/** DNS answers carry a trailing dot and mixed case; comparisons want neither. */
+function normalizeHost(name: string): string {
+  return name.trim().toLowerCase().replace(/\.$/, '');
+}
+
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return String(seconds);
+  if (seconds % 86400 === 0) return `${seconds / 86400} d`;
+  if (seconds % 3600 === 0) return `${seconds / 3600} h`;
+  if (seconds % 60 === 0) return `${seconds / 60} min`;
+  return `${seconds} s`;
+}
+
+/**
+ * Names the serial's shape without judging it. RFC 1982 requires only that it increases
+ * (32-bit serial arithmetic), so "YYYYMMDDnn" and a Unix timestamp are both conventions - and
+ * checkers that call anything else invalid are reporting their own heuristic.
+ */
+function describeSerial(serial: number): { kind: 'date' | 'epoch' | 'counter'; text: string } {
+  const digits = String(serial);
+  if (/^\d{10}$/.test(digits)) {
+    const year = Number(digits.slice(0, 4));
+    const month = Number(digits.slice(4, 6));
+    const day = Number(digits.slice(6, 8));
+    if (year >= 2000 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return { kind: 'date', text: `date-style (${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)})` };
+    }
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const tenYears = 10 * 365 * 86400;
+  if (digits.length >= 9 && serial > now - tenYears && serial < now + 366 * 86400) {
+    return {
+      kind: 'epoch',
+      text: `Unix timestamp (${new Date(serial * 1000).toISOString().slice(0, 10)})`,
+    };
+  }
+
+  return { kind: 'counter', text: 'plain counter' };
+}
+
+async function checkSoa(ctx: CheckContext): Promise<DomainCheckResult[]> {
+  const base = {
+    id: 'soa',
+    label: 'SOA record',
+    purpose:
+      "The SOA is the zone's own header: which server is primary, who to contact, and the timers a secondary nameserver uses. The DNS provider generates it, so the values checkers complain about (expire, serial format) rarely mean anything is broken - this reports what is actually wrong and leaves the rest as notes.",
+  };
+
+  if (!ctx.lookupSoa) {
+    return [{ ...base, status: 'skipped', summary: 'the configured resolver cannot answer SOA queries' }];
+  }
+
+  let soa: SoaRecord;
+  try {
+    soa = await ctx.lookupSoa(ctx.domain);
+  } catch (error) {
+    const missing = isAbsent(error);
+    return [
+      {
+        ...base,
+        status: 'error',
+        summary: missing ? 'no SOA record at the apex' : `the SOA lookup failed: ${dnsFailure(error)}`,
+        fix: 'A delegated zone must publish an SOA. If the domain resolves at all, this is usually a stale delegation - check it at the registrar.',
+      },
+    ];
+  }
+
+  const problems: string[] = [];
+  const notes: string[] = [];
+
+  const mname = normalizeHost(soa.nsname);
+  let nameservers: string[] | null = null;
+  if (ctx.lookupNs) {
+    try {
+      nameservers = (await ctx.lookupNs(ctx.domain)).map(normalizeHost);
+    } catch {
+      notes.push('the NS set could not be read, so the primary nameserver was not compared with it');
+    }
+  }
+
+  if (nameservers && nameservers.length > 0 && !nameservers.includes(mname)) {
+    problems.push(
+      `the SOA names ${soa.nsname} as primary, which is not one of this zone's NS records (${nameservers.join(', ')})`,
+    );
+  }
+
+  // RNAME is the admin mailbox with the first dot standing in for @.
+  const rname = soa.hostmaster.replace(/\.$/, '');
+  const rnameMailbox = rname.replace(/\./, '@');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rnameMailbox)) {
+    problems.push(`the SOA admin field "${soa.hostmaster}" does not read as a mailbox (it should be name.domain with a dot for @)`);
+  }
+
+  if (soa.refresh <= 0 || soa.retry <= 0 || soa.expire <= 0) {
+    problems.push('one of the SOA timers is zero, which stops secondaries from ever refreshing or expiring cleanly');
+  }
+  if (soa.retry >= soa.refresh && soa.refresh > 0) {
+    problems.push(
+      `retry (${formatDuration(soa.retry)}) is not shorter than refresh (${formatDuration(soa.refresh)}), so a failing secondary retries slower than it refreshes`,
+    );
+  }
+  if (soa.expire > 0 && soa.expire < Math.max(3600, soa.refresh * 2)) {
+    problems.push(
+      `expire (${formatDuration(soa.expire)}) is shorter than two refreshes, so a secondary would drop the zone instead of retrying`,
+    );
+  }
+
+  // Notes, never status changes: these are provider choices, not faults on this deployment.
+  const serial = describeSerial(soa.serial);
+  if (serial.kind === 'counter') {
+    notes.push(`serial ${soa.serial} is a plain counter - valid; RFC 1982 only requires that it increases`);
+  }
+  const twoWeeks = 14 * 86400;
+  const fourWeeks = 28 * 86400;
+  if (soa.expire < twoWeeks || soa.expire > fourWeeks) {
+    notes.push(
+      `expire ${formatDuration(soa.expire)} is outside the 2-4 weeks many checkers recommend; with no secondary nameserver it changes nothing here`,
+    );
+  }
+  if (soa.minttl > 86400) {
+    notes.push(`negative TTL (minimum) is ${formatDuration(soa.minttl)}, which keeps "no such record" answers cached a long time`);
+  }
+
+  const details = [
+    `primary (MNAME): ${soa.nsname}`,
+    `admin (RNAME): ${rnameMailbox}`,
+    `serial: ${soa.serial} - ${serial.text}`,
+    `refresh: ${formatDuration(soa.refresh)}`,
+    `retry: ${formatDuration(soa.retry)}`,
+    `expire: ${formatDuration(soa.expire)}`,
+    `negative TTL (minimum): ${formatDuration(soa.minttl)}`,
+    ...(nameservers ? [`NS: ${nameservers.join(', ')}`] : []),
+    ...notes,
+  ];
+
+  if (problems.length > 0) {
+    return [
+      {
+        ...base,
+        status: 'warn',
+        summary: problems[0],
+        details: [...details, ...problems.slice(1).map((problem) => `also: ${problem}`)],
+        fix: 'The SOA is generated by the DNS provider; ask them to correct the timer or primary-nameserver values.',
+      },
+    ];
+  }
+
+  return [
+    {
+      ...base,
+      status: 'ok',
+      summary: `SOA is consistent: ${soa.nsname} is the primary, and the timers let a secondary refresh and retry safely`,
+      details,
+    },
+  ];
+}
+
 const CHECKS: ReadonlyArray<{ id: string; label: string; optional: boolean; run: CheckRunner }> = [
   { id: 'mx', label: 'MX records', optional: false, run: checkMx },
+  { id: 'soa', label: 'SOA record', optional: false, run: checkSoa },
   { id: 'spf', label: 'SPF record', optional: false, run: checkSpf },
   { id: 'dmarc', label: 'DMARC record', optional: false, run: checkDmarc },
   { id: 'dkim', label: 'DKIM keys', optional: false, run: checkDkim },
@@ -1577,7 +1761,7 @@ const CHECKS: ReadonlyArray<{ id: string; label: string; optional: boolean; run:
 ];
 
 function defaultResolver(): DnsResolver {
-  return { resolveMx, resolveTxt, resolve4, resolve6, resolveCname, resolveCaa };
+  return { resolveMx, resolveTxt, resolve4, resolve6, resolveCname, resolveCaa, resolveSoa, resolveNs };
 }
 
 export async function checkDomain(domain: string, options: DomainCheckOptions = {}): Promise<DomainCheckReport> {

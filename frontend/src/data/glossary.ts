@@ -1183,4 +1183,19 @@ export const GLOSSARY: GlossaryTerm[] = [
     reference: 'RFC 4034 Appendix B',
     related: ['dnssec', 'ds-record'],
   },
+  {
+    id: 'soa',
+    term: 'SOA',
+    expansion: 'Start of Authority',
+    aliases: ['SOA record', 'serial', 'zone serial', 'refresh', 'retry', 'expire', 'minimum'],
+    category: 'dns',
+    short:
+      "The zone's own header record: the primary nameserver, an admin mailbox, and the timers a secondary nameserver uses.",
+    detail:
+      'Fields: MNAME (primary server), RNAME (admin mailbox, with a dot where @ would be), SERIAL, REFRESH, RETRY, EXPIRE and MINIMUM (the negative-cache TTL). The serial only has to increase - RFC 1982 serial arithmetic - and two formats dominate: YYYYMMDDnn and a Unix timestamp. Both are conventions; a checker that calls either "invalid format" is reporting its own heuristic, not a protocol rule. EXPIRE matters only when a secondary nameserver exists: it is how long a secondary keeps answering if it cannot reach the primary.',
+    whyItMatters:
+      'The domain check reports the values and flags what is actually wrong: a primary that is not one of the NS records, an expire shorter than two refreshes, a retry slower than refresh, zeroed timers, or no SOA at all. The 2-4 week expire band and the serial format are shown as notes, because neither breaks anything on a zone served by one provider.',
+    reference: 'RFC 1035 §3.3.13',
+    related: ['domain-check', 'dns-txt-record'],
+  },
 ];
