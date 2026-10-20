@@ -90,7 +90,10 @@ promises about a future refactor.
   and nonce. No claim confers a role or domain access: a provisioned account starts as
   `role: 'user'`, and linking an external identity to an existing account leaves that
   account's role and domains exactly as they were. Linking requires the provider to mark the
-  email verified.
+  email verified. A provider that never sends `email_verified` (Entra ID v2.0) can be accepted
+  per provider with `trustUnverifiedEmail`; that only covers an **absent** claim - an explicit
+  `false` is still refused - and turning it on is an administrator decision recorded in the
+  provider row, not a default.
 - **Passwords are hashed with scrypt** (`backend/src/services/auth.ts`): N=16384, r=8, p=1,
   a per-password salt, a versioned format string, and `timingSafeEqual` for the comparison.
   There is no fallback to a weaker hash.
@@ -103,11 +106,15 @@ promises about a future refactor.
   attempts per minute per IP (`backend/src/routes/auth.ts`), and repeated failures set
   `lockedUntil` for a configurable window (`authenticate()` in `services/auth.ts`). Failures
   return the same message whether or not the account exists.
-- **Report queries are scoped per domain.** `getDomainScope()` in
-  `backend/src/middleware/auth.ts` returns `null` for admins and the user's assigned domains
-  otherwise; `routes/reports.ts`, `summary.ts`, `forensics.ts` and `processingLogs.ts` apply
-  that scope in the query itself. A user with no assigned domains gets empty results, not an
-  error.
+- **Report queries are tenant-scoped.** `getDomainScope()` in
+  `backend/src/middleware/auth.ts` is the single read choke point. A superadmin with no active
+  organisation gets `null` (everything); an organisation member gets the domains owned by their
+  active organisation (`Domain.orgId`); a user with no membership falls back to the legacy
+  `UserDomain` assignments during migration; anything else gets an empty list, never everything.
+  The `X-Org-Id` header is validated against membership before any route runs, and every
+  report-shaped route applies the scope in its query. A domain has exactly one owner, so a
+  second organisation gets `409 DOMAIN_OWNED` rather than shared access. Cross-organisation
+  per-resource ids answer 404, not 403.
 - **Security-relevant events are recorded in the database, not only in stdout.** Routes set
   `req.audit` and one middleware (`backend/src/middleware/audit.ts`) writes the row when the
   response finishes, taking the outcome from the status code - so "success" cannot be recorded
@@ -121,6 +128,29 @@ promises about a future refactor.
   `data.auditRetentionDays` (default 365; `0` keeps forever). What this is not: tamper-evident
   against someone holding the database file, and not shipped off the host. Export on a schedule
   if that matters to you - `docs/nis2.md` says why.
+- **DNS writes are opt-in, previewed and non-destructive.** `backend/src/services/dnsApply.ts`
+  talks to Cloudflare or Loopia only when that provider's credentials are configured
+  (`CLOUDFLARE_API_TOKEN`, or `LOOPIA_API_USER`/`LOOPIA_API_PASS`; alternatively the
+  administrator-only `dns.*` settings, which are never returned by the API or logged). Cloudflare
+  never receives a `DELETE`; an update only replaces a record carrying the same `v=` tag. Loopia
+  has no update call, so its writer removes exactly the identified record id and re-adds it -
+  still nothing else at that name. The plan is recomputed server-side so a client cannot supply a
+  value, and every apply is audited (`domain.dns.apply`) whether it succeeds or fails. Loopia
+  credentials are sent in the XML body of every call over HTTPS (the API has no scoped token),
+  and its per-minute Fault 429 is retried twice before the request fails with a wait message.
+  `docs/dns-apply.md` lists what is deliberately not writable (DS, MTA-STS, CAA, autodiscover).
+- **Tenant data follows the mailbox, not the name typed into a form.** A domain is owned by
+  exactly one organisation. Ingestion auto-claims an unowned domain for the org whose mailbox
+  received the report; a report for a domain owned by another org is written only as a
+  `quarantined` processing log with no data row, so neither tenant can read the other's mail.
+  The scheduler only ingests enabled `OrgMailbox` rows (plus the virtual legacy mailbox for
+  `Default` while it has none). Mailbox and DNS credentials are write-only over the API and are
+  stored in the same SQLite volume as the rest of the tenant data.
+- **Alert delivery leaves the host only if configured.** The optional webhook is an
+  administrator-set HTTPS URL; each new alert is POSTed once with the domain, source IP, counts
+  and title, with a 5 s timeout and no retry. There is no host allowlist, so an administrator can
+  point it at an internal HTTPS endpoint - the same trust level as the DNS token. When unset,
+  alerts stay in the database (`docs/alerts.md`).
 
 ## Verifying a published image
 

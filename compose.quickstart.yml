@@ -42,6 +42,12 @@ services:
       # The address you actually reach this on, e.g. https://dmarc.example.com. Only needed
       # when a browser calls the API from a different origin than the UI.
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+
+      # Optional "Apply to DNS" credentials. Anything left blank can be set later under
+      # Administration -> Settings -> dns; a value here wins over the stored one.
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      LOOPIA_API_USER: ${LOOPIA_API_USER:-}
+      LOOPIA_API_PASS: ${LOOPIA_API_PASS:-}
     volumes:
       # The SQLite database - everything the app knows lives here. Do not tar the live
       # directory: a copy taken mid-transaction can be torn. Take a snapshot through

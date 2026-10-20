@@ -20,6 +20,11 @@ services:
       # TLS terminates at host nginx, so the session cookie must be marked Secure there.
       - COOKIE_SECURE=${COOKIE_SECURE}
       - PUBLIC_ORIGIN=${PUBLIC_ORIGIN}
+      # Optional "Apply to DNS" credentials. The settings page works too; a value here wins
+      # over the same field stored in the database.
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
+      - LOOPIA_API_USER=${LOOPIA_API_USER:-}
+      - LOOPIA_API_PASS=${LOOPIA_API_PASS:-}
       # Optional scheduler overrides.
       - ENABLE_SCHEDULED_EMAIL_PROCESSING=${ENABLE_SCHEDULED_EMAIL_PROCESSING:-}
       - EMAIL_PROCESSING_INTERVAL_MS=${EMAIL_PROCESSING_INTERVAL_MS:-}

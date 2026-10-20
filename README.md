@@ -34,6 +34,8 @@ gh attestation verify oci://ghcr.io/kristofer84/dmarc-parser:latest --repo krist
 | `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD` | The mailbox that receives `rua`/`ruf` reports. Entirely optional: anything left out can be set in the UI under *Administration → Settings*, per field, where the environment keeps precedence. **Test connection** there reports the real server's answer before you save. |
 | `COOKIE_SECURE` | `true` once TLS is in front of it, otherwise the session cookie is dropped over http. |
 | `PUBLIC_ORIGIN` | Only needed when a browser calls the API from a different origin than the UI. |
+| `CLOUDFLARE_API_TOKEN` | Optional. Token with **Zone → DNS → Edit** used by the *Apply to DNS* action; it takes precedence over the token stored under *Administration → Settings → dns*. Without either, the copy-paste path still works. |
+| `LOOPIA_API_USER`, `LOOPIA_API_PASS` | Optional. Loopia XML-RPC API credentials (an API user such as `pi@loopiaapi`, not the customer login). Same *Apply to DNS* action, same copy-paste fallback; environment values win over the settings page. |
 | `DATABASE_URL` | Defaults to `file:/app/data/data.db`, inside the mounted volume. |
 
 Appearance is configurable per instance: *Administration → Settings → Branding* sets the
@@ -59,12 +61,16 @@ hosted fork is not permitted.
 ## 🚀 Features
 
 - **Automated Email Processing**: Fetches DMARC reports from IMAP email accounts
-- **Aggregate (rua) reports**: XML parsing with validation, per-source-IP pass/fail breakdown
+- **Aggregate (rua) reports**: XML parsing with validation, per-source-IP pass/fail breakdown, and a **Sources** view that ranks senders by volume with DMARC/SPF/DKIM pass rates, dispositions, first/last seen and 7/30/90/all ranges
 - **Forensic (ruf) reports**: per-message authentication failures, including the failing message's headers when the reporter attaches it
 - **TLS-RPT reports**: SMTP TLS outcomes from senders (successes, failures and the reason for each failure), which is what tells you whether MTA-STS can be enforced
+- **Alerts**: a new sender for a domain, or a failure spike above a configurable threshold, recorded idempotently and delivered in-app or to an optional HTTPS webhook
+- **Ingest verification**: each domain shows the `rua`/`ruf` address to publish and whether a report has actually arrived in the last 30 days
+- **Apply to DNS, with a preview**: generated SPF/DMARC/DKIM/TLS-RPT records can be created or replaced through the Cloudflare API, with explicit overwrite consent, no deletes, and an audit entry - or copied by hand for any other provider
 - **Nothing arriving silently dropped**: an attachment the parsers do not understand is listed in the processing log rather than disappearing
 - **Both TLS-RPT transports**: reports arriving by mail are ingested directly; the reports an HTTPS collector stores on the mail host are pulled hourly by a small sync job that lives outside the container (so the app never holds an SSH key)
-- **Multi-user with per-domain access**: administrators see everything, users see only the domains assigned to them
+- **Organisations (tenants)**: an org owns domains, mailboxes and DNS accounts; members are org admins or viewers; a domain can be claimed once. Public org self-signup is a setting, off by default
+- **Per-organisation mailboxes**: each org ingests through its own IMAP mailbox(es); a report auto-claims its domain for that org, and a report for a domain owned by another org is quarantined rather than exposed. The legacy mailbox keeps working as a virtual mailbox for the Default org
 - **Passkeys and SSO, without giving up passwords**: WebAuthn sign-in, plus OIDC as an identity-only third way in
 - **Persistent audit trail**: who changed what, from where, and whether it worked - with filters, CSV/JSON export and a SHA-256 digest over each export
 - **Data retention**: per-dataset policies for aggregate reports, forensic reports and the audit log, with a preview of exactly what a run would delete
