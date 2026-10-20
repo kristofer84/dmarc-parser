@@ -44,6 +44,7 @@ export interface OidcProvider {
   clientSecret: string;
   scopes: string;
   allowAutoProvision: boolean;
+  trustUnverifiedEmail: boolean;
   defaultDomains: string;
 }
 
@@ -135,6 +136,7 @@ export function serializeProvider(provider: OidcProvider & { createdAt: Date; up
     clientSecretSet: provider.clientSecret.trim().length > 0,
     scopes: provider.scopes,
     allowAutoProvision: provider.allowAutoProvision,
+    trustUnverifiedEmail: provider.trustUnverifiedEmail,
     defaultDomains: parseDefaultDomains(provider.defaultDomains),
     createdAt: provider.createdAt.toISOString(),
     updatedAt: provider.updatedAt.toISOString(),
@@ -437,7 +439,15 @@ export async function completeLogin(params: CompleteLoginParams): Promise<OidcLo
   }
 
   const email = readStringClaim(claims, 'email')?.toLowerCase() ?? null;
-  const emailVerified = claims.email_verified === true;
+  // `email_verified` is the protocol's only statement that the address belongs to the subject.
+  // Some providers omit it entirely rather than sending false (Entra ID v2.0 does), which is
+  // why the per-provider opt-in exists: the administrator configuring the provider accepts the
+  // directory's address as authoritative. It deliberately only covers an *absent* claim -
+  // an explicit `email_verified: false` is never upgraded.
+  const verificationClaim = claims.email_verified;
+  const emailVerified =
+    verificationClaim === true ||
+    (verificationClaim === undefined && provider.trustUnverifiedEmail && email !== null);
 
   // 1. A subject we have seen before signs in; nothing else about the token can change that.
   const identity = await prisma.userIdentity.findUnique({
@@ -480,19 +490,11 @@ export async function completeLogin(params: CompleteLoginParams): Promise<OidcLo
     return { ok: false, reason: 'email_unverified' };
   }
 
-  // allowAutoProvision is the consent an admin gave by configuring this provider; the global
-  // auth.registrationOpen setting deliberately plays no part here. It also gates linking an
-  // identity to an existing account, because creating that identity row is itself provisioning:
-  // turning the flag off means "only subjects/accounts we already know", not "new users only".
-  if (!provider.allowAutoProvision) {
-    audit('login rejected: provisioning disabled', { provider: provider.name, email });
-    return { ok: false, reason: 'provisioning_disabled' };
-  }
-
-  // Identity-only: whatever else the token carries, it never confers authority, so an account
-  // provisioned here starts as an ordinary user. Roles and domain access are granted in this app.
   // 3. A verified email matching an existing account links that account - the one moment the
-  //    provider is trusted to speak for a local user.
+  //    provider is trusted to speak for a local user. This runs even with allowAutoProvision
+  //    off: the administrator who created that account already decided this address may sign
+  //    in, and the flag governs creating *new* accounts, not admitting ones that exist. Were the
+  //    gate here, pre-creating an account for an SSO user would accomplish nothing.
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
     if (!existing.isActive) {
@@ -538,8 +540,20 @@ export async function completeLogin(params: CompleteLoginParams): Promise<OidcLo
     return { ok: true, user, outcome: 'linked', role: user.role };
   }
 
-  // 4. No identity, no account, allowed to provision: create both, in one transaction so a
-  //    failure cannot leave a user nobody can ever sign in as (an orphan has no password).
+  // 4. No identity and no account: creating one is exactly what allowAutoProvision consents
+  //    to. The global auth.registrationOpen setting deliberately plays no part - it governs
+  //    password self-registration, not what an administrator configured per provider. Checked
+  //    after the link branch above so that turning the flag off means "no unknown addresses",
+  //    not "not even people an administrator added".
+  if (!provider.allowAutoProvision) {
+    audit('login rejected: provisioning disabled', { provider: provider.name, email });
+    return { ok: false, reason: 'provisioning_disabled' };
+  }
+
+  // Identity-only: whatever else the token carries, it never confers authority, so an account
+  // provisioned here starts as an ordinary user. Roles and domain access are granted in this app.
+  // Both rows are created in one transaction so a failure cannot leave a user nobody can ever
+  // sign in as (an orphan has no password).
   const defaultDomains = parseDefaultDomains(provider.defaultDomains);
   const created = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({

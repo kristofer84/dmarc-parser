@@ -85,6 +85,7 @@ const stub = {
   sub: 'sub-initial',
   email: 'oidc-user@test.local',
   emailVerified: true,
+  omitEmailVerified: false,
   name: 'OIDC User',
   groups: [] as string[],
   tamperNonce: false,
@@ -172,7 +173,8 @@ function buildStubIssuer(): express.Application {
       exp: now + 300,
       nonce: stub.tamperNonce ? 'definitely-not-the-nonce' : entry.nonce,
       email: stub.email,
-      email_verified: stub.emailVerified,
+      // Entra ID and others leave the claim out entirely rather than sending false.
+      ...(stub.omitEmailVerified ? {} : { email_verified: stub.emailVerified }),
       name: stub.name,
       ...(stub.groups.length > 0 ? { groups: stub.groups } : {}),
     };
@@ -196,6 +198,7 @@ function scenario(overrides: Partial<typeof stub> = {}): string {
   Object.assign(stub, {
     email: 'oidc-user@test.local',
     emailVerified: true,
+    omitEmailVerified: false,
     name: 'OIDC User',
     groups: [],
     tamperNonce: false,
@@ -515,6 +518,85 @@ await test('a provider with allowAutoProvision off rejects an unknown account', 
     );
   } finally {
     await configureProvider({ allowAutoProvision: true });
+  }
+});
+
+await test('a provider with allowAutoProvision off still links a pre-created account', async () => {
+  // The flag governs creating accounts, not admitting ones an administrator already made: an
+  // address with a local account signs in (and gains the identity link) even with it off.
+  const existing = await prisma.user.create({
+    data: {
+      email: 'pre-created@test.local',
+      passwordHash: 'scrypt$16384$8$1$c2FsdA$aGFzaA',
+      role: 'user',
+    },
+  });
+
+  await configureProvider({ allowAutoProvision: false });
+  try {
+    const subject = scenario({ email: 'pre-created@test.local' });
+    const callback = await hitCallback(await beginFlow());
+    assert.equal(callback.status, 302, JSON.stringify(callback.body));
+    assert.equal(callback.location, '/');
+    assert.ok(callback.cookie, 'a linked sign-in must set a session cookie');
+
+    const identity = await prisma.userIdentity.findFirst({
+      where: { providerId: mainProvider.id, subject },
+    });
+    assert.ok(identity, 'the identity must be created for the pre-created account');
+    assert.equal(identity!.userId, existing.id);
+    assert.equal(
+      await prisma.user.count({ where: { email: 'pre-created@test.local' } }),
+      1,
+      'linking must not create a second account',
+    );
+
+    const me = await call('GET', '/api/auth/me', { cookie: callback.cookie! });
+    assert.equal(me.status, 200, JSON.stringify(me.body));
+    assert.equal(me.body.user.id, existing.id);
+  } finally {
+    await configureProvider({ allowAutoProvision: true });
+  }
+});
+
+await test('an absent email_verified claim is refused without the opt-in', async () => {
+  // Not every provider sends the marker (Entra ID v2.0 does not). Absence is not consent:
+  // the strict default still refuses it.
+  scenario({ email: 'no-marker@test.local', omitEmailVerified: true });
+  const callback = await hitCallback(await beginFlow());
+  assert.match(callback.location ?? '', /\/login\?error=email_unverified/);
+  assert.equal(callback.cookie, null);
+  assert.equal(await prisma.user.count({ where: { email: 'no-marker@test.local' } }), 0);
+});
+
+await test('the trustUnverifiedEmail opt-in accepts an absent claim and provisions', async () => {
+  await configureProvider({ trustUnverifiedEmail: true });
+  try {
+    scenario({ email: 'trusted-marker@test.local', omitEmailVerified: true });
+    const callback = await hitCallback(await beginFlow());
+    assert.equal(callback.status, 302, JSON.stringify(callback.body));
+    assert.equal(callback.location, '/');
+    assert.ok(callback.cookie, 'a provisioned sign-in must set a session cookie');
+
+    const user = await prisma.user.findUnique({ where: { email: 'trusted-marker@test.local' } });
+    assert.ok(user, 'the opt-in must allow provisioning from the bare email claim');
+  } finally {
+    await configureProvider({ trustUnverifiedEmail: false });
+  }
+});
+
+await test('the opt-in never overrides an explicit email_verified: false', async () => {
+  // A provider that says "not verified" must not be overruled by a setting meant for providers
+  // that say nothing at all.
+  await configureProvider({ trustUnverifiedEmail: true });
+  try {
+    scenario({ email: 'explicitly-unverified@test.local', emailVerified: false });
+    const callback = await hitCallback(await beginFlow());
+    assert.match(callback.location ?? '', /\/login\?error=email_unverified/);
+    assert.equal(callback.cookie, null);
+    assert.equal(await prisma.user.count({ where: { email: 'explicitly-unverified@test.local' } }), 0);
+  } finally {
+    await configureProvider({ trustUnverifiedEmail: false });
   }
 });
 

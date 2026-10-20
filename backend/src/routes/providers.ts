@@ -85,6 +85,9 @@ function readProviderBody(
   if (typeof body.allowAutoProvision === 'boolean') {
     data.allowAutoProvision = body.allowAutoProvision;
   }
+  if (typeof body.trustUnverifiedEmail === 'boolean') {
+    data.trustUnverifiedEmail = body.trustUnverifiedEmail;
+  }
   if (typeof body.enabled === 'boolean') {
     data.enabled = body.enabled;
   }
