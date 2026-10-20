@@ -749,6 +749,95 @@
                   </p>
                 </div>
               </template>
+
+              <!-- A plus alias on one of this organisation's mailboxes. Publishing it is a merge
+                   into the existing _dmarc record, not a separate DNS change, so it lives beside
+                   the rest of the rua work rather than in its own card. -->
+              <div class="border-t border-gray-200 pt-4">
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 class="text-sm font-medium text-gray-900">Hosted addresses</h4>
+                    <p class="mt-1 text-xs text-gray-500">
+                      One-click addresses of this organisation. Publishing one merges it into the
+                      existing DMARC record as <span class="font-mono">rua=</span>; other
+                      reporting addresses in that record are kept.
+                    </p>
+                  </div>
+                  <span v-if="hostedAddresses.length" class="badge badge-gray shrink-0">
+                    {{ hostedAddresses.length }}
+                  </span>
+                </div>
+
+                <p v-if="hostedLoading" class="mt-2 text-xs text-gray-500">Loading…</p>
+                <p v-else-if="hostedError" class="mt-2 rounded-md bg-danger-50 p-2 text-xs text-danger-700">
+                  {{ hostedError }}
+                </p>
+                <p
+                  v-else-if="!detail?.domain.organization"
+                  class="mt-2 text-xs text-gray-500"
+                >
+                  This domain has no organisation yet, so there is no hosted address to publish.
+                </p>
+                <p v-else-if="hostedAddresses.length === 0" class="mt-2 text-xs text-gray-500">
+                  This organisation has no hosted address yet. Add one under Organisation →
+                  Hosted addresses.
+                </p>
+                <ul v-else class="mt-2 space-y-2">
+                  <li
+                    v-for="hosted in hostedAddresses"
+                    :key="hosted.id"
+                    class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-surface-muted px-3 py-2"
+                  >
+                    <div class="min-w-0">
+                      <p class="text-sm text-gray-700">{{ hosted.label }}</p>
+                      <code class="break-all font-mono text-xs text-gray-600">{{
+                        hosted.address
+                      }}</code>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-2">
+                      <span v-if="!hosted.enabled" class="badge badge-gray">disabled</span>
+                      <button
+                        type="button"
+                        class="btn btn-secondary text-xs"
+                        :disabled="!hosted.enabled || hostedRuaBusyId === hosted.id"
+                        :title="
+                          hosted.enabled
+                            ? `Merge ${hosted.address} into the DMARC record`
+                            : 'A disabled address is never accepted as a rua target'
+                        "
+                        @click="addHostedRua(hosted)"
+                      >
+                        {{ hostedRuaBusyId === hosted.id ? 'Adding…' : 'Add as rua' }}
+                      </button>
+                    </div>
+                  </li>
+                </ul>
+
+                <div v-if="hostedRuaResult" class="mt-2 rounded-md bg-surface-muted p-3">
+                  <p v-if="hostedRuaResult.error" class="text-xs text-danger-700">
+                    {{ hostedRuaResult.error }}
+                  </p>
+                  <template v-else>
+                    <p class="text-xs text-gray-500">DMARC record now:</p>
+                    <div class="group flex items-start gap-2">
+                      <code class="min-w-0 flex-1 break-all font-mono text-xs text-gray-700">{{
+                        hostedRuaResult.value
+                      }}</code>
+                      <CopyButton
+                        v-if="hostedRuaResult.value"
+                        :value="hostedRuaResult.value"
+                        label="DMARC record"
+                      />
+                    </div>
+                    <p
+                      v-if="hostedRuaResult.previous"
+                      class="mt-1 break-all font-mono text-xs text-gray-400"
+                    >
+                      was: {{ hostedRuaResult.previous }}
+                    </p>
+                  </template>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -776,7 +865,7 @@ import StatusBadge from '@/components/StatusBadge.vue';
 import CopyButton from '@/components/CopyButton.vue';
 import RecordSuggestionsPanel from '@/components/RecordSuggestionsPanel.vue';
 import Sparkline from '@/components/Sparkline.vue';
-import { dnsAccountsApi, domainsApi } from '@/api/client';
+import { dnsAccountsApi, domainsApi, hostedAddressesApi } from '@/api/client';
 import { useAsyncData } from '@/composables/useApi';
 import { useAuth } from '@/composables/useAuth';
 import { useToast } from '@/composables/useToast';
@@ -792,10 +881,11 @@ import type {
   DomainDetail,
   DomainHealthSummary,
   DomainSummary,
+  HostedAddress,
   IngestInfo,
 } from '@/types/api';
 
-const { isOrgAdmin } = useAuth();
+const { isOrgAdmin, activeOrganizationId } = useAuth();
 const toast = useToast();
 
 const columns = [
@@ -964,6 +1054,7 @@ const loadDetail = async (id: string) => {
     edit.notes = result.domain.notes ?? '';
     edit.dnsAccountId = result.domain.dnsAccount?.id ?? '';
     void loadOrgDnsAccounts(result.domain.organization?.id ?? null);
+    void loadHostedAddresses(result.domain.organization?.id ?? null);
 
     // The ingest and DNS panels describe the domain, not the last check, so a re-run of the
     // check does not have to throw the loaded plan away - only a different domain does.
@@ -1242,6 +1333,71 @@ const addDmarcRua = async () => {
   }
 };
 
+// ------------------------------------------------------------------ hosted addresses (organisation)
+// A hosted address is a plus alias on a mailbox this organisation already ingests. Publishing it
+// is one merge into the existing _dmarc record, so the list stays beside the other rua controls.
+const hostedAddresses = ref<HostedAddress[]>([]);
+const hostedLoading = ref(false);
+const hostedError = ref<string | null>(null);
+const hostedRuaBusyId = ref<string | null>(null);
+const hostedRuaResult = ref<{
+  value: string | null;
+  previous: string | null;
+  error: string | null;
+} | null>(null);
+
+/**
+ * Only an org admin can read these, and only for a domain that belongs to the active
+ * organisation: the endpoint answers every other organisation with a 404 by design.
+ */
+const loadHostedAddresses = async (organizationId: string | null) => {
+  hostedAddresses.value = [];
+  hostedError.value = null;
+  hostedRuaResult.value = null;
+  if (!organizationId || !isOrgAdmin.value) return;
+  if (activeOrganizationId.value && activeOrganizationId.value !== organizationId) return;
+
+  hostedLoading.value = true;
+  try {
+    hostedAddresses.value = await hostedAddressesApi.list(organizationId);
+  } catch (err) {
+    hostedAddresses.value = [];
+    hostedError.value = err instanceof Error ? err.message : 'Could not load the hosted addresses';
+  } finally {
+    hostedLoading.value = false;
+  }
+};
+
+const addHostedRua = async (hosted: HostedAddress) => {
+  const current = detail.value;
+  if (!current || !hosted.enabled) return;
+
+  hostedRuaBusyId.value = hosted.id;
+  hostedRuaResult.value = null;
+
+  try {
+    const result = await domainsApi.dmarcRua(current.domain.name, hosted.address);
+    hostedRuaResult.value = { value: result.value, previous: result.previous, error: null };
+    toast.success(`${hosted.address} added to the DMARC record`);
+    // The ingest card counts what arrives at the address, and a loaded plan now describes an
+    // older record; both are re-read only after the merge actually succeeded.
+    await loadIngest(current.domain.name);
+    if (dnsPlan.value) {
+      void loadDnsPlan();
+    }
+  } catch (err) {
+    // The API refuses an address that is not an enabled hosted address of this organisation, and
+    // that refusal belongs next to the button, not in a toast that disappears.
+    hostedRuaResult.value = {
+      value: null,
+      previous: null,
+      error: err instanceof Error ? err.message : 'Could not add the address',
+    };
+  } finally {
+    hostedRuaBusyId.value = null;
+  }
+};
+
 const splitList = (value: string): string[] =>
   value.split(',').map((entry) => entry.trim()).filter(Boolean);
 
@@ -1372,6 +1528,8 @@ const removeDomain = async () => {
     dnsPlanDomain.value = null;
     resetDnsPanel();
     ingest.value = null;
+    hostedAddresses.value = [];
+    hostedRuaResult.value = null;
     sync();
     toast.success(`Removed ${name}`);
     await load();

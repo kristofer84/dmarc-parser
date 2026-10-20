@@ -390,9 +390,198 @@
                 </label>
               </div>
 
-              <div class="md:col-span-2 flex justify-end gap-3">
+              <div
+                v-if="mailboxFormTest"
+                class="md:col-span-2 rounded-md p-3"
+                :class="mailboxFormTest.ok ? 'bg-success-50' : 'bg-danger-50'"
+              >
+                <p
+                  class="text-sm"
+                  :class="mailboxFormTest.ok ? 'text-success-800' : 'text-danger-800'"
+                >
+                  <span class="font-medium">
+                    {{ mailboxFormTest.ok ? 'Connected' : 'Connection failed' }}:
+                  </span>
+                  {{ mailboxFormTest.message }}
+                </p>
+                <p v-if="mailboxFormTest.greeting" class="mt-1 break-all font-mono text-xs text-gray-600">
+                  {{ mailboxFormTest.greeting }}
+                </p>
+              </div>
+
+              <div class="md:col-span-2 flex flex-wrap justify-end gap-3">
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  :disabled="testingMailboxForm"
+                  @click="testMailboxForm"
+                >
+                  {{ testingMailboxForm ? 'Testing…' : 'Test connection' }}
+                </button>
                 <button type="submit" class="btn btn-primary" :disabled="savingMailbox">
                   {{ savingMailbox ? 'Saving…' : editingMailboxId ? 'Save changes' : 'Add mailbox' }}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- ============================================================ hosted addresses -->
+        <!-- A plus alias on a mailbox the organisation already ingests: no MX, no catch-all and
+             no DNS work. The API generates the address; the admin only names it. -->
+        <div class="card">
+          <div class="card-header flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 class="text-lg leading-6 font-medium text-gray-900">Hosted addresses</h2>
+              <p class="mt-1 text-sm text-gray-500">
+                Each one is a plus alias on a mailbox this organisation already ingests
+                (<span class="font-mono">dmarc+&lt;token&gt;@example.com</span>), so it needs no MX
+                or catch-all and no DNS work — publish it as <span class="font-mono">rua=</span> and
+                reports are routed by the token in the address.
+              </p>
+            </div>
+            <span class="badge badge-gray shrink-0">
+              {{ hostedAddresses.filter((row) => row.enabled).length }} enabled of
+              {{ hostedAddresses.length }}
+            </span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="table">
+              <thead class="table-header">
+                <tr>
+                  <th scope="col" class="table-header-cell">Address</th>
+                  <th scope="col" class="table-header-cell">Base mailbox</th>
+                  <th scope="col" class="table-header-cell">Last report</th>
+                  <th scope="col" class="table-header-cell">Status</th>
+                  <th scope="col" class="table-header-cell"><span class="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody class="table-body">
+                <template v-if="hostedLoading">
+                  <tr v-for="n in 2" :key="`hosted-loading-${n}`">
+                    <td v-for="column in 5" :key="column" class="table-cell">
+                      <div class="animate-pulse bg-gray-200 h-4 rounded"></div>
+                    </td>
+                  </tr>
+                </template>
+                <tr v-else-if="hostedAddresses.length === 0">
+                  <td colspan="5" class="px-6 py-6 text-sm text-gray-500">
+                    No hosted address yet. Add one below and publish it as the domain's
+                    <span class="font-mono">rua=</span> target.
+                  </td>
+                </tr>
+                <tr v-for="hosted in hostedAddresses" v-else :key="hosted.id">
+                  <td class="table-cell align-top">
+                    <div class="font-medium text-gray-900">{{ hosted.label }}</div>
+                    <div class="group flex items-center gap-1">
+                      <code class="break-all font-mono text-xs text-gray-600">{{ hosted.address }}</code>
+                      <CopyButton :value="hosted.address" label="hosted address" />
+                    </div>
+                  </td>
+                  <td class="table-cell align-top text-sm text-gray-700">
+                    <template v-if="hosted.baseMailbox">{{ hosted.baseMailbox.label }}</template>
+                    <span v-else class="text-gray-500">Legacy settings</span>
+                  </td>
+                  <td class="table-cell align-top nums text-gray-600">
+                    {{ hosted.lastReportAt ? formatRelative(hosted.lastReportAt) : 'not receiving yet' }}
+                  </td>
+                  <td class="table-cell align-top">
+                    <div class="flex flex-col gap-1">
+                      <StatusBadge
+                        :status="hosted.enabled ? 'active' : 'disabled'"
+                        :label="hosted.enabled ? 'Enabled' : 'Disabled'"
+                      />
+                      <label class="inline-flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          :checked="hosted.enabled"
+                          :disabled="busyHostedId === hosted.id"
+                          :aria-label="`Enable ${hosted.label}`"
+                          @change="
+                            toggleHostedAddress(
+                              hosted,
+                              ($event.target as HTMLInputElement).checked
+                            )
+                          "
+                        />
+                        <span class="text-xs text-gray-600">
+                          {{ busyHostedId === hosted.id ? 'Saving…' : 'Enabled' }}
+                        </span>
+                      </label>
+                    </div>
+                  </td>
+                  <td class="table-cell align-top text-right">
+                    <button
+                      type="button"
+                      class="btn btn-secondary text-xs text-danger-700"
+                      :disabled="busyHostedId === hosted.id"
+                      @click="removeHostedAddress(hosted)"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card-body space-y-4 border-t border-gray-200">
+            <div>
+              <h3 class="text-sm font-medium text-gray-900">Add a hosted address</h3>
+              <p class="mt-1 text-xs text-gray-500">
+                The address itself is generated from the base mailbox's domain, so a mailbox has to
+                exist first. Leaving the base on automatic uses the first enabled mailbox.
+              </p>
+            </div>
+
+            <p v-if="hostedError" class="rounded-md bg-danger-50 p-3 text-sm text-danger-700">
+              {{ hostedError }}
+            </p>
+
+            <div
+              v-if="!mailboxesLoading && enabledMailboxCount === 0"
+              class="rounded-md bg-warning-50 p-3 text-xs text-warning-800"
+            >
+              This organisation has no enabled mailbox, so an alias has no mailbox to be delivered
+              into. Add and enable a mailbox above first; only the Default organisation can fall
+              back to the legacy mailbox configured in Settings → Mailbox.
+            </div>
+
+            <form class="grid grid-cols-1 gap-4 md:grid-cols-2" @submit.prevent="addHostedAddress">
+              <div>
+                <label for="hosted-label" class="block text-sm font-medium text-gray-700 mb-1">
+                  Label
+                </label>
+                <input
+                  id="hosted-label"
+                  v-model="hostedForm.label"
+                  type="text"
+                  required
+                  placeholder="DMARC reports — example.com"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+              <div>
+                <label for="hosted-base" class="block text-sm font-medium text-gray-700 mb-1">
+                  Base mailbox <span class="font-normal text-gray-500">(optional)</span>
+                </label>
+                <select
+                  id="hosted-base"
+                  v-model="hostedForm.baseMailboxId"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="">Automatic — first enabled mailbox</option>
+                  <option v-for="mailbox in mailboxes" :key="mailbox.id" :value="mailbox.id">
+                    {{ mailbox.label }} — {{ mailbox.user }}{{ mailbox.enabled ? '' : ' (disabled)' }}
+                  </option>
+                </select>
+              </div>
+
+              <div class="md:col-span-2 flex justify-end">
+                <button type="submit" class="btn btn-primary" :disabled="addingHosted">
+                  {{ addingHosted ? 'Adding…' : 'Add hosted address' }}
                 </button>
               </div>
             </form>
@@ -633,7 +822,49 @@
                 </label>
               </div>
 
-              <div class="md:col-span-2 flex justify-end gap-3">
+              <div
+                v-if="dnsFormTest"
+                class="md:col-span-2 rounded-md p-3"
+                :class="dnsFormTest.ok ? 'bg-success-50' : 'bg-danger-50'"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p
+                      class="text-sm"
+                      :class="dnsFormTest.ok ? 'text-success-800' : 'text-danger-800'"
+                    >
+                      <span class="font-medium">
+                        {{ dnsFormTest.ok ? 'Credentials accepted' : 'Credentials refused' }}:
+                      </span>
+                      {{ dnsFormTest.message || (dnsFormTest.ok ? 'The provider answered' : 'The provider refused the credentials') }}
+                    </p>
+                    <div v-if="(dnsFormTest.visible ?? []).length" class="mt-2">
+                      <p class="text-xs font-medium text-gray-700">
+                        Visible at the provider ({{ (dnsFormTest.visible ?? []).length }}):
+                      </p>
+                      <p class="mt-1 break-all font-mono text-xs text-gray-600">
+                        {{ (dnsFormTest.visible ?? []).join(', ') }}
+                      </p>
+                    </div>
+                    <p v-else-if="dnsFormTest.ok" class="mt-2 text-xs text-gray-600">
+                      The credentials work, but no zone or domain is visible to them.
+                    </p>
+                  </div>
+                  <button type="button" class="btn btn-secondary text-xs" @click="dnsFormTest = null">
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              <div class="md:col-span-2 flex flex-wrap justify-end gap-3">
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  :disabled="testingDnsForm"
+                  @click="testAccountForm"
+                >
+                  {{ testingDnsForm ? 'Testing…' : 'Test & fetch hosts' }}
+                </button>
                 <button type="submit" class="btn btn-primary" :disabled="savingAccount">
                   {{ savingAccount ? 'Saving…' : editingAccountId ? 'Save changes' : 'Add account' }}
                 </button>
@@ -650,14 +881,17 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
-import { dnsAccountsApi, mailboxesApi, organizationsApi } from '@/api/client';
+import CopyButton from '@/components/CopyButton.vue';
+import { dnsAccountsApi, hostedAddressesApi, mailboxesApi, organizationsApi } from '@/api/client';
 import { useAuth } from '@/composables/useAuth';
 import { useToast } from '@/composables/useToast';
 import type {
   DnsAccount,
   DnsAccountCredentials,
   DnsAccountProvider,
+  DnsAccountTestResult,
   DnsAccountVerification,
+  HostedAddress,
   MailboxTestResult,
   OrgMailbox,
   OrganizationMember,
@@ -782,6 +1016,8 @@ const mailboxError = ref<string | null>(null);
 const editingMailboxId = ref<string | null>(null);
 const testingMailboxId = ref<string | null>(null);
 const mailboxTest = ref<{ label: string; result: MailboxTestResult } | null>(null);
+const mailboxFormTest = ref<MailboxTestResult | null>(null);
+const testingMailboxForm = ref(false);
 
 interface MailboxForm {
   label: string;
@@ -828,12 +1064,14 @@ const loadMailboxes = async () => {
 
 const resetMailboxForm = () => {
   editingMailboxId.value = null;
+  mailboxFormTest.value = null;
   Object.assign(mailboxForm, emptyMailboxForm());
 };
 
 const startMailboxEdit = (mailbox: OrgMailbox) => {
   editingMailboxId.value = mailbox.id;
   mailboxError.value = null;
+  mailboxFormTest.value = null;
   Object.assign(mailboxForm, {
     label: mailbox.label,
     host: mailbox.host,
@@ -897,6 +1135,34 @@ const testMailbox = async (mailbox: OrgMailbox) => {
   }
 };
 
+const testMailboxForm = async () => {
+  if (!orgId.value) return;
+  testingMailboxForm.value = true;
+  mailboxFormTest.value = null;
+
+  try {
+    // The same values the form would save. On edit the id lets the server fall back to the
+    // stored password, so a blank box does not mean "no password".
+    mailboxFormTest.value = await mailboxesApi.testValues(orgId.value, {
+      ...(editingMailboxId.value ? { id: editingMailboxId.value } : {}),
+      host: mailboxForm.host.trim(),
+      port: Number(mailboxForm.port),
+      user: mailboxForm.user.trim(),
+      verifyTls: mailboxForm.verifyTls,
+      ...(mailboxForm.password ? { password: mailboxForm.password } : {}),
+    });
+  } catch (err) {
+    // Reaching here means the request broke (a missing host, an unreachable server), not that
+    // the mailbox refused us - but it is still information for the form, never a save error.
+    mailboxFormTest.value = {
+      ok: false,
+      message: err instanceof Error ? err.message : 'Could not run the test',
+    };
+  } finally {
+    testingMailboxForm.value = false;
+  }
+};
+
 const removeMailbox = async (mailbox: OrgMailbox) => {
   if (!orgId.value) return;
   const confirmed = window.confirm(
@@ -922,6 +1188,96 @@ const removeMailbox = async (mailbox: OrgMailbox) => {
   }
 };
 
+// ------------------------------------------------------------------ hosted addresses
+const hostedAddresses = ref<HostedAddress[]>([]);
+const hostedLoading = ref(false);
+const addingHosted = ref(false);
+const busyHostedId = ref<string | null>(null);
+const hostedError = ref<string | null>(null);
+const hostedForm = reactive<{ label: string; baseMailboxId: string }>({
+  label: '',
+  baseMailboxId: '',
+});
+
+/** An address can only be derived from a mailbox, so this is what blocks the form. */
+const enabledMailboxCount = computed(
+  () => mailboxes.value.filter((mailbox) => mailbox.enabled).length
+);
+
+const loadHostedAddresses = async () => {
+  if (!orgId.value) return;
+  hostedLoading.value = true;
+  try {
+    hostedAddresses.value = await hostedAddressesApi.list(orgId.value);
+  } catch (err) {
+    hostedAddresses.value = [];
+    hostedError.value = err instanceof Error ? err.message : 'Could not load the hosted addresses';
+  } finally {
+    hostedLoading.value = false;
+  }
+};
+
+const addHostedAddress = async () => {
+  if (!orgId.value) return;
+  addingHosted.value = true;
+  hostedError.value = null;
+
+  try {
+    // An empty select means "let the server pick", so the id is only sent when chosen.
+    const created = await hostedAddressesApi.create(orgId.value, {
+      label: hostedForm.label.trim(),
+      ...(hostedForm.baseMailboxId ? { baseMailboxId: hostedForm.baseMailboxId } : {}),
+    });
+    toast.success(`Added ${created.address}`);
+    hostedForm.label = '';
+    hostedForm.baseMailboxId = '';
+    await loadHostedAddresses();
+  } catch (err) {
+    // The 409s (no base mailbox, duplicate label) carry the reason the admin needs.
+    hostedError.value = err instanceof Error ? err.message : 'Could not add the hosted address';
+  } finally {
+    addingHosted.value = false;
+  }
+};
+
+const toggleHostedAddress = async (hosted: HostedAddress, enabled: boolean) => {
+  if (!orgId.value || enabled === hosted.enabled) return;
+  busyHostedId.value = hosted.id;
+  hostedError.value = null;
+
+  try {
+    await hostedAddressesApi.update(orgId.value, hosted.id, { enabled });
+    toast.success(`${hosted.label} ${enabled ? 'enabled' : 'disabled'}`);
+    await loadHostedAddresses();
+  } catch (err) {
+    hostedError.value = err instanceof Error ? err.message : 'Could not change the address';
+    // The checkbox shows the stored value, so a refusal has to re-read the row.
+    await loadHostedAddresses();
+  } finally {
+    busyHostedId.value = null;
+  }
+};
+
+const removeHostedAddress = async (hosted: HostedAddress) => {
+  if (!orgId.value) return;
+  const confirmed = window.confirm(
+    `Delete the hosted address "${hosted.label}"?\n\n` +
+      `Reports already sent to ${hosted.address} keep their organisation, but the address stops ` +
+      'routing new ones immediately. A published rua= pointing at it will bounce. This cannot be ' +
+      'undone.'
+  );
+  if (!confirmed) return;
+
+  hostedError.value = null;
+  try {
+    await hostedAddressesApi.remove(orgId.value, hosted.id);
+    toast.success(`Deleted ${hosted.label}`);
+    await loadHostedAddresses();
+  } catch (err) {
+    hostedError.value = err instanceof Error ? err.message : 'Could not delete the hosted address';
+  }
+};
+
 // ------------------------------------------------------------------ DNS accounts
 const dnsAccounts = ref<DnsAccount[]>([]);
 const dnsLoading = ref(false);
@@ -930,6 +1286,8 @@ const accountError = ref<string | null>(null);
 const editingAccountId = ref<string | null>(null);
 const verifyingAccountId = ref<string | null>(null);
 const dnsVerification = ref<{ label: string; result: DnsAccountVerification } | null>(null);
+const dnsFormTest = ref<DnsAccountTestResult | null>(null);
+const testingDnsForm = ref(false);
 
 interface AccountForm {
   label: string;
@@ -969,12 +1327,14 @@ const loadAccounts = async () => {
 
 const resetAccountForm = () => {
   editingAccountId.value = null;
+  dnsFormTest.value = null;
   Object.assign(accountForm, emptyAccountForm());
 };
 
 const startDnsEdit = (account: DnsAccount) => {
   editingAccountId.value = account.id;
   accountError.value = null;
+  dnsFormTest.value = null;
   Object.assign(accountForm, {
     label: account.label,
     provider: account.provider,
@@ -1042,6 +1402,48 @@ const saveAccount = async () => {
   }
 };
 
+/**
+ * Test the form's credentials without saving them. On edit with both secret boxes blank the
+ * stored set is what needs checking, so the saved-account verify endpoint is used instead:
+ * there are no typed credentials to send. Either way a refusal is a result, not a form error.
+ */
+const testAccountForm = async () => {
+  if (!orgId.value) return;
+  const credentials = readCredentials();
+  const editing = editingAccountId.value;
+
+  if (!credentials && !editing) {
+    dnsFormTest.value = {
+      ok: false,
+      message:
+        accountForm.provider === 'cloudflare'
+          ? 'Enter an API token to test it.'
+          : 'Enter the API user and password to test them.',
+    };
+    return;
+  }
+
+  testingDnsForm.value = true;
+  dnsFormTest.value = null;
+
+  try {
+    dnsFormTest.value = credentials
+      ? await dnsAccountsApi.test(orgId.value, {
+          provider: accountForm.provider,
+          credentials,
+        })
+      : await dnsAccountsApi.verify(orgId.value, editing!);
+  } catch (err) {
+    // A 404/429 or a transport failure lands here; it is still shown beside the button.
+    dnsFormTest.value = {
+      ok: false,
+      message: err instanceof Error ? err.message : 'Could not run the check',
+    };
+  } finally {
+    testingDnsForm.value = false;
+  }
+};
+
 const verifyAccount = async (account: DnsAccount) => {
   if (!orgId.value) return;
   verifyingAccountId.value = account.id;
@@ -1088,11 +1490,11 @@ const removeAccount = async (account: DnsAccount) => {
 
 // ------------------------------------------------------------------ wiring
 const loadingAny = computed(
-  () => membersLoading.value || mailboxesLoading.value || dnsLoading.value
+  () => membersLoading.value || mailboxesLoading.value || hostedLoading.value || dnsLoading.value
 );
 
 const loadAll = async () => {
-  await Promise.all([loadMembers(), loadMailboxes(), loadAccounts()]);
+  await Promise.all([loadMembers(), loadMailboxes(), loadHostedAddresses(), loadAccounts()]);
 };
 
 const formatDateTime = (value: string | null): string => {

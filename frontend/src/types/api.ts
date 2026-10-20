@@ -203,6 +203,34 @@ export interface OrgMailboxInput {
   enabled?: boolean;
 }
 
+/**
+ * A one-click hosted address: a **plus alias** on a mailbox this instance already ingests.
+ *
+ *     dmarc@example.com  →  dmarc+<token>@example.com
+ *
+ * There is no MX or catch-all behind it: the receiving server drops the plus address into the
+ * base mailbox and this app routes it by the token in `Delivered-To` / `X-Original-To` / `To`.
+ * The token is part of the address the operator publishes, so it is returned as well.
+ */
+export interface HostedAddress {
+  id: string;
+  label: string;
+  token: string;
+  address: string;
+  /** Null means the legacy mailbox configuration (the Default organisation's virtual mailbox). */
+  baseMailbox: { id: string; label: string } | null;
+  enabled: boolean;
+  lastReportAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HostedAddressInput {
+  label: string;
+  /** Omitted keeps the server's default: the first enabled mailbox, else the legacy mailbox. */
+  baseMailboxId?: string | null;
+}
+
 /** DNS credentials belong to an organisation, never to a domain. */
 export type DnsAccountProvider = 'cloudflare' | 'loopia';
 
@@ -245,6 +273,14 @@ export interface DnsAccountVerification {
   message?: string;
   /** What the credentials can see at the provider: zone or domain names. */
   visible?: string[];
+}
+
+/** Unsaved credentials are checked with the same call shape and answer the same envelope. */
+export type DnsAccountTestResult = DnsAccountVerification;
+
+export interface DnsAccountTestInput {
+  provider: DnsAccountProvider;
+  credentials: DnsAccountCredentials;
 }
 
 export interface SessionInfo {
@@ -376,6 +412,19 @@ export interface MailboxTestResult {
   ok: boolean;
   message: string;
   greeting?: string;
+}
+
+/**
+ * The mailbox form's own values, tested before anything is written. `id` makes a blank password
+ * fall back to the stored one, so editing does not require retyping it.
+ */
+export interface MailboxTestInput {
+  id?: string;
+  host?: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  verifyTls?: boolean;
 }
 
 export interface ManagedUser {
