@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import { rateLimit } from '../middleware/validation.js';
 import { requireAuth, sendError, type AuthenticatedRequest } from '../middleware/auth.js';
 import { createSession, getDomainsForUser } from '../services/auth.js';
+import { getDomainsForOrganization, listUserOrganizations } from '../services/organizations.js';
 import { setSessionCookie } from '../services/sessionCookie.js';
 import { resolveWebAuthnConfig, type WebAuthnConfig } from '../services/webauthnConfig.js';
 import {
@@ -216,14 +217,23 @@ router.post('/login/verify', rateLimit(20, 60000), async (req: AuthenticatedRequ
   });
   setSessionCookie(req, res, session.token, session.expiresAt);
 
-  const domains = await getDomainsForUser(outcome.user.id);
+  const organizations = await listUserOrganizations(outcome.user.id);
+  const domains = organizations[0]
+    ? await getDomainsForOrganization(organizations[0].id)
+    : await getDomainsForUser(outcome.user.id);
   req.audit = {
     action: 'auth.login',
     actor: outcome.user.email,
     actorId: outcome.user.id,
     detail: { method: 'passkey', role: outcome.user.role },
   };
-  return res.json({ user: outcome.user, domains, expiresAt: session.expiresAt.toISOString() });
+  return res.json({
+    user: outcome.user,
+    domains,
+    organizations,
+    activeOrganizationId: organizations[0]?.id ?? null,
+    expiresAt: session.expiresAt.toISOString(),
+  });
 });
 
 // GET /webauthn/credentials - the signed-in account's own passkeys

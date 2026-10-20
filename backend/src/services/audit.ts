@@ -19,6 +19,7 @@ export type AuditOutcome = 'success' | 'failure';
 export interface AuditInput {
   action: string;
   outcome?: AuditOutcome;
+  orgId?: string | null;
   actor?: string | null;
   actorId?: string | null;
   target?: string | null;
@@ -80,6 +81,7 @@ export async function recordAudit(input: AuditInput): Promise<void> {
   try {
     await prisma.auditEvent.create({
       data: {
+        orgId: input.orgId ?? null,
         actor: (input.actor ?? 'anonymous').slice(0, MAX_STRING),
         actorId: input.actorId ?? null,
         action: input.action.slice(0, 200),

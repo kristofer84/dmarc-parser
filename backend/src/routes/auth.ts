@@ -1,6 +1,7 @@
 import express from 'express';
 import { rateLimit } from '../middleware/validation.js';
 import {
+  getDomainScope,
   requireAuth,
   sendError,
   type AuthenticatedRequest,
@@ -20,6 +21,11 @@ import {
 } from '../services/auth.js';
 import { prisma } from '../db/prisma.js';
 import { getBooleanSetting, getNumberSetting } from '../services/settings.js';
+import {
+  getDomainsForOrganization,
+  listUserOrganizations,
+  signupOrganization,
+} from '../services/organizations.js';
 import { resolveWebAuthnConfig } from '../services/webauthnConfig.js';
 import { clearSessionCookie, setSessionCookie } from '../services/sessionCookie.js';
 
@@ -71,7 +77,11 @@ router.post('/login', rateLimit(10, 60000), async (req: AuthenticatedRequest, re
 
   setSessionCookie(req, res, session.token, session.expiresAt);
 
-  const domains = await getDomainsForUser(outcome.user.id);
+  const organizations = await listUserOrganizations(outcome.user.id);
+  // The active organisation is the first membership; its domains are what the UI lists.
+  const domains = organizations[0]
+    ? await getDomainsForOrganization(organizations[0].id)
+    : await getDomainsForUser(outcome.user.id);
   console.log(`🔑 Login: ${outcome.user.email} (${outcome.user.role})`);
 
   req.audit = {
@@ -81,7 +91,13 @@ router.post('/login', rateLimit(10, 60000), async (req: AuthenticatedRequest, re
     detail: { method: 'password', role: outcome.user.role },
   };
 
-  return res.json({ user: outcome.user, domains, expiresAt: session.expiresAt.toISOString() });
+  return res.json({
+    user: outcome.user,
+    domains,
+    organizations,
+    activeOrganizationId: organizations[0]?.id ?? null,
+    expiresAt: session.expiresAt.toISOString(),
+  });
 });
 
 // POST /auth/logout
@@ -99,8 +115,41 @@ router.post('/logout', async (req: AuthenticatedRequest, res) => {
 
 // GET /auth/me
 router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
-  const domains = await getDomainsForUser(req.user!.id);
-  return res.json({ user: req.user, domains });
+  const [scope, memberships] = await Promise.all([
+    // The active organisation's domains, not the legacy assignment list.
+    getDomainScope(req),
+    listUserOrganizations(req.user!.id),
+  ]);
+
+  // A superadmin can switch to any organisation, not only the ones they are a member of.
+  const organizations =
+    req.user!.role === 'admin'
+      ? (await prisma.organization.findMany({ orderBy: { name: 'asc' } })).map((org) => ({
+          id: org.id,
+          name: org.name,
+          slug: org.slug,
+          role: 'admin' as const,
+          createdAt: org.createdAt.toISOString(),
+        }))
+      : memberships;
+
+  // `scope === null` means all domains (superadmin viewing all orgs); the SPA still expects a
+  // list, so it gets every domain name rather than a null.
+  const domains =
+    scope === null
+      ? (await prisma.domain.findMany({ select: { name: true }, orderBy: { name: 'asc' } })).map(
+          (row) => row.name.toLowerCase(),
+        )
+      : scope;
+
+  return res.json({
+    user: req.user,
+    domains,
+    organizations,
+    activeOrganizationId: req.organizationId ?? null,
+    orgRole: req.orgRole ?? (req.user!.role === 'admin' ? 'admin' : null),
+    isSuperAdmin: req.user!.role === 'admin',
+  });
 });
 
 // POST /auth/change-password
@@ -208,10 +257,52 @@ router.post('/register', rateLimit(5, 60000), async (req: AuthenticatedRequest, 
   return res.status(201).json({ user: toAuthUser(created), domains: [] });
 });
 
+// POST /auth/signup-org - public, setting-gated: create an organisation and its first admin
+router.post('/signup-org', rateLimit(5, 60 * 60 * 1000, 'org-signup'), async (req, res) => {
+  if (!(await getBooleanSetting('auth.orgSignupOpen'))) {
+    return sendError(res, 403, 'SIGNUP_DISABLED', 'Organisation self-signup is disabled');
+  }
+
+  try {
+    const result = await signupOrganization({
+      organizationName: req.body?.organizationName ?? req.body?.name,
+      name: req.body?.adminName ?? req.body?.name,
+      email: req.body?.email,
+      password: req.body?.password,
+    });
+
+    const session = await createSession(result.user.id, {
+      ip: req.ip ?? null,
+      userAgent: req.headers['user-agent'] ?? null,
+    });
+    setSessionCookie(req, res, session.token, session.expiresAt);
+
+    req.audit = {
+      action: 'organization.signup',
+      actor: result.user.email,
+      actorId: result.user.id,
+      orgId: result.organization.id,
+      target: result.organization.name,
+    };
+
+    return res.status(201).json({
+      user: result.user,
+      domains: [],
+      organizations: [result.organization],
+      activeOrganizationId: result.organization.id,
+      expiresAt: session.expiresAt.toISOString(),
+    });
+  } catch (error) {
+    const typed = error as Error & { statusCode?: number; code?: string };
+    return sendError(res, typed.statusCode ?? 500, typed.code ?? 'INTERNAL_SERVER_ERROR', typed.message);
+  }
+});
+
 // GET /auth/session-policy - what the login page needs to know before signing in
 router.get('/session-policy', async (_req, res) => {
-  const [registrationOpen, sessionHours, webauthn] = await Promise.all([
+  const [registrationOpen, orgSignupOpen, sessionHours, webauthn] = await Promise.all([
     getBooleanSetting('auth.registrationOpen'),
+    getBooleanSetting('auth.orgSignupOpen'),
     getNumberSetting('auth.sessionHours'),
     resolveWebAuthnConfig(),
   ]);
@@ -219,7 +310,12 @@ router.get('/session-policy', async (_req, res) => {
   // Announced rather than probed: a deployment with no origin configured must tell the
   // login page not to offer passkeys at all, instead of letting the user tap a button
   // that can only fail.
-  return res.json({ registrationOpen, sessionHours, passkeysEnabled: webauthn.enabled });
+  return res.json({
+    registrationOpen,
+    orgSignupOpen,
+    sessionHours,
+    passkeysEnabled: webauthn.enabled,
+  });
 });
 
 export default router;

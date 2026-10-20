@@ -17,7 +17,7 @@ const router = express.Router();
 
 router.use(requireAuth);
 
-const VALID_STATUSES = ['started', 'success', 'skipped', 'error'];
+const VALID_STATUSES = ['started', 'success', 'skipped', 'error', 'quarantined'];
 const SORT_FIELD_MAP: Record<string, keyof Prisma.ProcessingLogOrderByWithRelationInput> = {
   createdAt: 'createdAt',
   status: 'status',
@@ -51,10 +51,20 @@ router.get(
 
       const where: Prisma.ProcessingLogWhereInput = {};
 
-      // Scoped users see only the logs of their own domains; logs with no linked report
-      // (rare, and only from a failed parse) stay administrator-only.
-      const scope = await getDomainScope(req as AuthenticatedRequest);
-      if (scope !== null) {
+      // The tenant filter comes first: a log is written by the mailbox that fetched the mail,
+      // so `orgId` is the authoritative tenant column and does not depend on the report being
+      // linked or on the domain still being owned. A quarantined log has no report at all,
+      // which is exactly the row the ingesting organisation must be able to see.
+      const activeOrgId = (req as AuthenticatedRequest).organizationId;
+      if (activeOrgId) {
+        where.orgId = activeOrgId;
+      }
+
+      // Legacy fallback for a caller with no active organisation: scoped by the domains it may
+      // read; logs with no linked report (rare, and only from a failed parse) stay
+      // administrator-only. A superadmin with no organisation selected sees everything.
+      const scope = activeOrgId ? null : await getDomainScope(req as AuthenticatedRequest);
+      if (!activeOrgId && scope !== null) {
         if (scope.length === 0) {
           return res.json({ data: [], pagination: { page, limit, total: 0, pages: 0 } });
         }

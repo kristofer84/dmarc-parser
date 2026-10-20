@@ -28,6 +28,8 @@ export interface AuditNote {
   detail?: Record<string, unknown>;
   /** Only needed when the status code does not describe the outcome (a 200 that failed). */
   outcome?: AuditOutcome;
+  /** Tenant the action belongs to; defaults to the request's active organisation. */
+  orgId?: string;
   /**
    * A POST that only reads (it exists for its body): nothing changed, so there is nothing to
    * record. Without this, every DNS-suggestion lookup would look like a state change.
@@ -86,6 +88,7 @@ export function auditRequests(
     void recordAudit({
       action: note?.action ?? fallbackAction(req),
       outcome,
+      orgId: note?.orgId ?? req.organizationId ?? null,
       actor: note?.actor ?? req.user?.email ?? 'anonymous',
       actorId: note?.actorId ?? req.user?.id ?? null,
       target: note?.target ?? null,

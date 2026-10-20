@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { config } from './config/env.js';
 import reportsRouter from './routes/reports.js';
 import summaryRouter from './routes/summary.js';
+import sourcesRouter from './routes/sources.js';
 import processingLogsRouter from './routes/processingLogs.js';
 import forensicsRouter from './routes/forensics.js';
 import domainsRouter from './routes/domains.js';
@@ -15,9 +16,14 @@ import settingsRouter from './routes/settings.js';
 import webauthnRouter from './routes/webauthn.js';
 import oidcRouter from './routes/oidc.js';
 import providersRouter from './routes/providers.js';
+import organizationsRouter from './routes/organizations.js';
+import orgMailboxesRouter from './routes/orgMailboxes.js';
+import dnsAccountsRouter from './routes/dnsAccounts.js';
 import auditRouter from './routes/audit.js';
 import tlsRptRouter from './routes/tlsRpt.js';
-import { attachUser, type AuthenticatedRequest } from './middleware/auth.js';
+import dnsRouter from './routes/dns.js';
+import alertsRouter from './routes/alerts.js';
+import { attachOrganization, attachUser, type AuthenticatedRequest } from './middleware/auth.js';
 import { auditRequests } from './middleware/audit.js';
 import { evaluateProcessingHealth, getProcessingStatus } from './services/processingStatus.js';
 
@@ -104,6 +110,8 @@ export function createApp(): express.Application {
 
   // Resolve the session cookie (if any) before anything that may care who is asking.
   app.use(attachUser);
+  // Resolves the tenant before the routers; a bad X-Org-Id is refused here, not half-applied.
+  app.use(attachOrganization);
   // Must come after attachUser (it needs the actor) and before the routers, so it can see
   // req.audit set by a handler and the final status code when the response finishes.
   app.use(auditRequests);
@@ -168,17 +176,28 @@ export function createApp(): express.Application {
   app.use('/api/branding', brandingRouter);
   app.use('/api/reports', reportsRouter);
   app.use('/api/summary', summaryRouter);
+  app.use('/api/sources', sourcesRouter);
   app.use('/api/processing-logs', processingLogsRouter);
   app.use('/api/forensics', forensicsRouter);
   // TLS-RPT (RFC 8460): SMTP TLS outcomes, read-only and domain-scoped.
   app.use('/api/tlsrpt', tlsRptRouter);
+  // Same base as the domains router: the DNS routes are /:name/dns/... and /:name/dmarc/rua,
+  // which do not overlap any route there. Mounted first so the more specific paths are tried
+  // before the domain detail routes.
+  app.use('/api/domains', dnsRouter);
   app.use('/api/domains', domainsRouter);
+  app.use('/api/alerts', alertsRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/settings', settingsRouter);
   // Reading and exporting the audit trail. Administrator-only; see routes/audit.ts.
   app.use('/api/audit', auditRouter);
   // Administrator management of sign-in providers (the public half is under /api/auth).
   app.use('/api/providers', providersRouter);
+  // Mailbox routes share the /api/organizations prefix (`/:orgId/mailboxes`) and must be
+  // mounted before the organisations router, whose `/:id/members` etc. do not overlap them.
+  app.use('/api/organizations', orgMailboxesRouter);
+  app.use('/api/organizations', dnsAccountsRouter);
+  app.use('/api/organizations', organizationsRouter);
 
   // All-in-one image: serve the built SPA from the same origin. The port is then the only
   // thing a deployer needs to expose, and browser requests to /api are same-origin, so CORS

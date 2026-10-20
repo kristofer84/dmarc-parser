@@ -12,6 +12,7 @@ import {
   getDomainScope,
   requireAdmin,
   requireAuth,
+  requireOrgAdmin,
   sendError,
   type AuthenticatedRequest,
 } from '../middleware/auth.js';
@@ -52,6 +53,52 @@ router.get('/', rateLimit(60, 60000), async (req: AuthenticatedRequest, res) => 
   return res.json({ data: await listDomains(scope) });
 });
 
+/** Evidence window for `verified`: a report that arrived recently is what proves rua= works. */
+const INGEST_WINDOW_DAYS = 30;
+
+// GET /domains/:name/ingest - where reports for this domain currently go, and whether any arrive
+router.get('/:name/ingest', rateLimit(60, 60000), async (req: AuthenticatedRequest, res) => {
+  const scope = await getDomainScope(req);
+
+  // The path carries a name here, not an id, so it is normalised the same way a new domain is.
+  let name: string;
+  try {
+    name = normalizeDomainName(pathParam(req, 'name'));
+  } catch {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'Enter a valid domain name');
+  }
+
+  // Out of scope answers 404, like every other per-domain resource.
+  if (scope !== null && !scope.includes(name)) {
+    return sendError(res, 404, 'NOT_FOUND', 'Domain not found');
+  }
+
+  const mailbox = await resolveMailboxConfig();
+  const address = mailbox.config?.user.trim() || null;
+
+  const since = new Date(Date.now() - INGEST_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const [latest, reports30d] = await Promise.all([
+    prisma.report.findFirst({
+      where: { domain: name },
+      orderBy: { endDate: 'desc' },
+      select: { endDate: true },
+    }),
+    prisma.report.count({ where: { domain: name, endDate: { gte: since } } }),
+  ]);
+
+  // `verified` is evidence, not configuration: only a report that actually arrived for this
+  // domain proves the published rua= points here. ruf= is optional for receivers, and when one
+  // does send a forensic report it goes to the same mailbox, so both addresses are the same.
+  return res.json({
+    rua: address ? `mailto:${address}` : null,
+    ruf: address ? `mailto:${address}` : null,
+    configured: mailbox.configured,
+    lastReportAt: latest ? latest.endDate.toISOString() : null,
+    reports30d,
+    verified: reports30d > 0,
+  });
+});
+
 // POST /domains/discover - add domains that have sent reports but are not tracked yet
 router.post('/discover', requireAdmin, async (req: AuthenticatedRequest, res) => {
   const result = await discoverDomains();
@@ -71,19 +118,71 @@ router.post('/check-all', requireAdmin, rateLimit(5, 60000), async (req: Authent
 });
 
 // POST /domains - add one by hand
-router.post('/', requireAdmin, async (req: AuthenticatedRequest, res) => {
-  const { name, dkimSelectors, expectedMx, notes, monitored } = req.body ?? {};
+router.post('/', requireOrgAdmin, async (req: AuthenticatedRequest, res) => {
+  const { name, dkimSelectors, expectedMx, notes, monitored, orgId } = req.body ?? {};
 
   try {
     const normalized = normalizeDomainName(String(name ?? ''));
+
+    // Where the claim lands: an org admin can only add to their active organisation; a
+    // superadmin may name one, use the selected organisation, or leave it unowned.
+    let targetOrgId: string | null = req.organizationId ?? null;
+    if (req.user!.role === 'admin' && orgId !== undefined) {
+      if (orgId === null) {
+        targetOrgId = null;
+      } else if (typeof orgId === 'string') {
+        const org = await prisma.organization.findUnique({ where: { id: orgId } });
+        if (!org) {
+          return sendError(res, 404, 'ORG_NOT_FOUND', 'Organisation not found');
+        }
+        targetOrgId = org.id;
+      } else {
+        return sendError(res, 400, 'VALIDATION_ERROR', 'orgId must be a string or null');
+      }
+    }
+    if (req.user!.role !== 'admin' && !targetOrgId) {
+      return sendError(res, 409, 'ORG_REQUIRED', 'Select an organisation before adding a domain');
+    }
+
     const existing = await prisma.domain.findUnique({ where: { name: normalized } });
     if (existing) {
-      return sendError(res, 409, 'CONFLICT', `${normalized} is already in the list`);
+      // A domain can be claimed once. An unowned row - typically discovered from a report that
+      // landed in the legacy mailbox - may be claimed by the org that adds it now.
+      if (existing.orgId !== null) {
+        return sendError(
+          res,
+          409,
+          'DOMAIN_OWNED',
+          `${normalized} is already claimed by another organisation`,
+        );
+      }
+      if (targetOrgId === null) {
+        return sendError(res, 409, 'CONFLICT', `${normalized} already exists (unowned)`);
+      }
+      const claimed = await prisma.domain.update({
+        where: { id: existing.id },
+        data: {
+          orgId: targetOrgId,
+          claimedAt: new Date(),
+          claimSource: 'manual',
+        },
+      });
+      console.log(`🔎 ${req.user!.email} claimed unowned domain ${normalized}`);
+      req.audit = {
+        action: 'domain.claim',
+        target: normalized,
+        orgId: targetOrgId,
+        detail: { from: 'unowned' },
+      };
+      return res.json({ domain: (await getDomain(claimed.id, null))?.domain ?? null });
     }
 
     const created = await prisma.domain.create({
       data: {
         name: normalized,
+        orgId: targetOrgId,
+        claimedAt: targetOrgId ? new Date() : null,
+        claimSource: targetOrgId ? 'manual' : null,
         dkimSelectors: JSON.stringify(dkimSelectors === undefined ? [] : readStringArray(dkimSelectors, 'dkimSelectors')),
         expectedMx: JSON.stringify(expectedMx === undefined ? [] : readStringArray(expectedMx, 'expectedMx')),
         monitored: monitored === undefined ? true : Boolean(monitored),
@@ -95,6 +194,7 @@ router.post('/', requireAdmin, async (req: AuthenticatedRequest, res) => {
     req.audit = {
       action: 'domain.create',
       target: created.name,
+      orgId: targetOrgId ?? undefined,
       detail: { monitored: created.monitored },
     };
     return res.status(201).json({ domain: (await getDomain(created.id, null))?.domain ?? null });
@@ -118,15 +218,64 @@ router.get('/:id', async (req: AuthenticatedRequest, res) => {
 });
 
 // PATCH /domains/:id - selectors, expected MX, monitoring, notes
-router.patch('/:id', requireAdmin, async (req: AuthenticatedRequest, res) => {
-  const { dkimSelectors, expectedMx, notes, monitored } = req.body ?? {};
+router.patch('/:id', requireOrgAdmin, async (req: AuthenticatedRequest, res) => {
+  const { dkimSelectors, expectedMx, notes, monitored, orgId, dnsAccountId } = req.body ?? {};
 
   const existing = await prisma.domain.findUnique({ where: { id: pathParam(req, 'id') } });
   if (!existing) {
     return sendError(res, 404, 'NOT_FOUND', 'Domain not found');
   }
 
+  // An org admin may edit only a domain their organisation owns.
+  if (
+    req.user!.role !== 'admin' &&
+    (!req.organizationId || existing.orgId !== req.organizationId)
+  ) {
+    return sendError(res, 404, 'NOT_FOUND', 'Domain not found');
+  }
+
   try {
+    let nextOrgId = existing.orgId;
+    if (orgId !== undefined) {
+      if (req.user!.role !== 'admin') {
+        return sendError(res, 403, 'FORBIDDEN', 'Only an instance administrator may move a domain');
+      }
+      if (orgId === null) {
+        nextOrgId = null;
+      } else if (typeof orgId === 'string') {
+        const org = await prisma.organization.findUnique({ where: { id: orgId } });
+        if (!org) {
+          return sendError(res, 404, 'ORG_NOT_FOUND', 'Organisation not found');
+        }
+        nextOrgId = org.id;
+      } else {
+        return sendError(res, 400, 'VALIDATION_ERROR', 'orgId must be a string or null');
+      }
+    }
+
+    let nextDnsAccountId = existing.dnsAccountId;
+    if (dnsAccountId !== undefined) {
+      if (dnsAccountId === null) {
+        nextDnsAccountId = null;
+      } else if (typeof dnsAccountId === 'string') {
+        const account = await prisma.dnsAccount.findUnique({ where: { id: dnsAccountId } });
+        if (!account) {
+          return sendError(res, 404, 'DNS_ACCOUNT_NOT_FOUND', 'DNS account not found');
+        }
+        if (!nextOrgId || account.orgId !== nextOrgId) {
+          return sendError(
+            res,
+            409,
+            'DNS_ACCOUNT_ORG_MISMATCH',
+            'The DNS account belongs to a different organisation',
+          );
+        }
+        nextDnsAccountId = account.id;
+      } else {
+        return sendError(res, 400, 'VALIDATION_ERROR', 'dnsAccountId must be a string or null');
+      }
+    }
+
     await prisma.domain.update({
       where: { id: existing.id },
       data: {
@@ -134,6 +283,12 @@ router.patch('/:id', requireAdmin, async (req: AuthenticatedRequest, res) => {
         ...(expectedMx === undefined ? {} : { expectedMx: JSON.stringify(readStringArray(expectedMx, 'expectedMx')) }),
         ...(monitored === undefined ? {} : { monitored: Boolean(monitored) }),
         ...(notes === undefined ? {} : { notes: typeof notes === 'string' && notes.trim() ? notes.trim() : null }),
+        ...(orgId === undefined ? {} : {
+          orgId: nextOrgId,
+          claimedAt: nextOrgId ? existing.claimedAt ?? new Date() : null,
+          claimSource: nextOrgId ? existing.claimSource ?? 'admin' : null,
+        }),
+        ...(dnsAccountId === undefined ? {} : { dnsAccountId: nextDnsAccountId }),
       },
     });
 
@@ -143,7 +298,7 @@ router.patch('/:id', requireAdmin, async (req: AuthenticatedRequest, res) => {
       target: existing.name,
       detail: {
         changed: Object.fromEntries(
-          Object.entries({ dkimSelectors, expectedMx, notes, monitored }).filter(
+          Object.entries({ dkimSelectors, expectedMx, notes, monitored, orgId, dnsAccountId }).filter(
             ([, value]) => value !== undefined,
           ),
         ),

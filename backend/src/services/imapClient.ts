@@ -85,17 +85,28 @@ export class ImapClient {
     });
   }
 
-  async connect(): Promise<void> {
+  /**
+   * Opens the connection. `config` is passed by the per-organisation ingestion path, which
+   * already resolved the mailbox row; without it the legacy environment/settings mailbox is
+   * resolved here, which keeps the CLI and the reparse command working unchanged.
+   */
+  async connect(config?: MailboxConfig): Promise<void> {
     if (!this.imap) {
-      const mailbox = await resolveMailboxConfig();
+      let mailboxConfig = config ?? null;
 
-      if (!mailbox.configured || !mailbox.config) {
-        throw new Error(
-          `Mailbox is not configured yet (${mailbox.summary}) - set it under Administration → Settings`,
-        );
+      if (!mailboxConfig) {
+        const mailbox = await resolveMailboxConfig();
+
+        if (!mailbox.configured || !mailbox.config) {
+          throw new Error(
+            `Mailbox is not configured yet (${mailbox.summary}) - set it under Administration → Settings`,
+          );
+        }
+
+        mailboxConfig = mailbox.config;
       }
 
-      this.createConnection(mailbox.config);
+      this.createConnection(mailboxConfig);
     }
 
     return new Promise((resolve, reject) => {
@@ -127,7 +138,7 @@ export class ImapClient {
     });
   }
 
-  async connectWithRetry(): Promise<void> {
+  async connectWithRetry(config?: MailboxConfig): Promise<void> {
     // Start every cycle with a fresh retry budget. Without this reset a cycle that
     // exhausted its retries leaves retryCount at maxRetries, so the loop below never
     // runs again: the method resolves without connecting and every later cycle dies in
@@ -137,7 +148,7 @@ export class ImapClient {
 
     while (this.retryCount < this.maxRetries) {
       try {
-        await this.connect();
+        await this.connect(config);
         return;
       } catch (error) {
         this.retryCount++;

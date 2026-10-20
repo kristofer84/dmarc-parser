@@ -25,6 +25,10 @@ export interface DomainSummary {
   dkimSelectors: string[];
   expectedMx: string[];
   notes: string | null;
+  /** Owning organisation; null for a domain discovered from reports but not yet claimed. */
+  organization: { id: string; name: string } | null;
+  /** The DNS account Apply-to-DNS uses, when one is assigned. */
+  dnsAccount: { id: string; label: string; provider: string } | null;
   createdAt: string;
   updatedAt: string;
   lastCheck: {
@@ -95,6 +99,8 @@ function serialize(
     notes: string | null;
     createdAt: Date;
     updatedAt: Date;
+    organization?: { id: string; name: string } | null;
+    dnsAccount?: { id: string; label: string; provider: string } | null;
     checks?: Array<{ status: string; runAt: Date; durationMs: number; resultsJson: string }>;
   },
   withResults = true,
@@ -108,6 +114,8 @@ function serialize(
     dkimSelectors: parseList(row.dkimSelectors),
     expectedMx: parseList(row.expectedMx),
     notes: row.notes,
+    organization: row.organization ?? null,
+    dnsAccount: row.dnsAccount ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lastCheck: latest
@@ -130,7 +138,11 @@ export async function listDomains(scope: string[] | null = null): Promise<Domain
   const rows = await prisma.domain.findMany({
     where: scope === null ? {} : { name: { in: scope } },
     orderBy: { name: 'asc' },
-    include: { checks: { orderBy: { runAt: 'desc' }, take: RECENT_CHECK_LIMIT } },
+    include: {
+      checks: { orderBy: { runAt: 'desc' }, take: RECENT_CHECK_LIMIT },
+      organization: { select: { id: true, name: true } },
+      dnsAccount: { select: { id: true, label: true, provider: true } },
+    },
   });
 
   return rows.map((row) => serialize(row));
@@ -145,6 +157,8 @@ export async function getDomain(
     where: { id },
     include: {
       checks: { orderBy: { runAt: 'desc' }, take: historyLimit },
+      organization: { select: { id: true, name: true } },
+      dnsAccount: { select: { id: true, label: true, provider: true } },
     },
   });
 

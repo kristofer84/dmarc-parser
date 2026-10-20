@@ -2,13 +2,21 @@ import { setupLogging } from './utils/logger.js';
 import { createApp } from './app.js';
 import { config } from './config/env.js';
 import { initializeDatabase, disconnectDatabase } from './db/prisma.js';
-import { EmailProcessor } from './services/emailProcessor.js';
+import { EmailProcessor, type ProcessingResult } from './services/emailProcessor.js';
 import { ensureSettingsSeeded, getBooleanSetting, getNumberSetting } from './services/settings.js';
 import { ensureAdminUser } from './services/auth.js';
 import { runAllChecks, discoverDomains } from './services/domainMonitor.js';
 import { resolveMailboxConfig } from './services/mailboxConfig.js';
+import { recordMailboxRun, resolveIngestMailboxes } from './services/orgMailboxes.js';
+import {
+  recordProcessingFailure,
+  recordProcessingSuccess,
+  setMailboxConfigured,
+} from './services/processingStatus.js';
 import { runRetention } from './services/retention.js';
+import { evaluateAlerts } from './services/alerts.js';
 import { recordAudit } from './services/audit.js';
+import { ensureDefaultOrganization, ensureSuperadminMembership } from './services/organizations.js';
 
 setupLogging();
 
@@ -41,6 +49,15 @@ async function startServer() {
       await ensureAdminUser();
     } catch (error) {
       console.warn('⚠️ Failed to ensure an administrator account exists:', error);
+    }
+
+    // Tenancy bootstrap: one Default organisation for everything that predates it, and a
+    // membership for every superadmin. Both are idempotent and cheap after the first run.
+    try {
+      await ensureDefaultOrganization();
+      await ensureSuperadminMembership();
+    } catch (error) {
+      console.warn('⚠️ Failed to initialise organisations:', error);
     }
 
     // Domain DNS checks. The interval is read from settings on every tick rather than fixed
@@ -119,6 +136,31 @@ async function startServer() {
       );
     }, RETENTION_TICK_MS).unref?.();
 
+    // Alert scan. Both findings look back over the same 24 h window and carry a dedupKey that the
+    // database enforces, so a 15-minute tick is a cheap re-read rather than a source of duplicates.
+    // The setting is read every tick, so switching alerts off takes effect without a restart.
+    const ALERT_TICK_MS = 15 * 60 * 1000;
+
+    const runAlertScanIfDue = async () => {
+      if (!(await getBooleanSetting('alerts.enabled'))) {
+        return;
+      }
+
+      const result = await evaluateAlerts();
+      console.log(
+        `🔔 Alerts: ${result.created} created, ${result.delivered} delivered, ${result.errors} error(s)`,
+      );
+    };
+
+    // After the first mail cycle rather than before it: the scan reads what ingestion wrote.
+    setTimeout(() => {
+      runAlertScanIfDue().catch((error) => console.warn('⚠️ Initial alert scan failed:', error));
+    }, 60_000).unref?.();
+
+    setInterval(() => {
+      runAlertScanIfDue().catch((error) => console.warn('⚠️ Scheduled alert scan failed:', error));
+    }, ALERT_TICK_MS).unref?.();
+
     // Create Express app
     const app = createApp();
 
@@ -143,12 +185,89 @@ async function startServer() {
       throw error;
     }
     
+    // Ingestion cycle: one sequential pass over every mailbox that should be ingested - each
+    // organisation's enabled OrgMailbox rows, plus the virtual legacy mailbox for the Default
+    // organisation while it has none. Sequential rather than parallel on purpose: the same
+    // EmailProcessor instance stamps a per-run context onto every row it writes, and a shared
+    // IMAP budget is the last thing that should compete with itself on a small host. One
+    // mailbox failing must not stop the others, so failures are collected per mailbox.
+    const runIngestionCycle = async (): Promise<ProcessingResult> => {
+      const mailboxes = await resolveIngestMailboxes();
+      setMailboxConfigured(mailboxes.length > 0);
+
+      if (mailboxes.length === 0) {
+        console.log(
+          '📭 No mailbox configured yet - set the legacy one under Administration → Settings, or add one to an organisation',
+        );
+        const empty: ProcessingResult = {
+          processed: 0,
+          forensic: 0,
+          tlsRpt: 0,
+          errors: 0,
+          skipped: 0,
+          quarantined: 0,
+          details: [],
+        };
+        recordProcessingSuccess(empty);
+        return empty;
+      }
+
+      const totals: ProcessingResult = {
+        processed: 0,
+        forensic: 0,
+        tlsRpt: 0,
+        errors: 0,
+        skipped: 0,
+        quarantined: 0,
+        details: [],
+      };
+      let failures = 0;
+      let firstError: unknown = null;
+
+      for (const mailbox of mailboxes) {
+        const label = `${mailbox.orgName ? `${mailbox.orgName} · ` : ''}${mailbox.label}`;
+
+        try {
+          const result = await emailProcessor.processMailbox(mailbox, { recordStatus: false });
+          totals.processed += result.processed;
+          totals.forensic += result.forensic;
+          totals.tlsRpt += result.tlsRpt;
+          totals.errors += result.errors;
+          totals.skipped += result.skipped;
+          totals.quarantined += result.quarantined;
+          totals.details.push(...result.details);
+
+          await recordMailboxRun(mailbox.mailboxId, null);
+          console.log(
+            `📬 ${label}: ${result.processed} aggregate, ${result.forensic} forensic, ${result.tlsRpt} TLS-RPT, ${result.skipped} skipped, ${result.quarantined} quarantined, ${result.errors} error(s)`,
+          );
+        } catch (error) {
+          failures++;
+          if (firstError === null) {
+            firstError = error;
+          }
+          await recordMailboxRun(mailbox.mailboxId, error);
+          console.error(
+            `❌ ${label}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+
+      if (failures > 0) {
+        recordProcessingFailure(firstError);
+      } else {
+        recordProcessingSuccess(totals);
+      }
+
+      return totals;
+    };
+
     // Run initial email processing
     console.log('🔄 Running initial email processing...');
     try {
-      const initialResult = await emailProcessor.processEmails();
+      const initialResult = await runIngestionCycle();
       console.log(
-        `📊 Initial processing: ${initialResult.processed} aggregate, ${initialResult.forensic} forensic, ${initialResult.tlsRpt} TLS-RPT, ${initialResult.errors} errors, ${initialResult.skipped} skipped`,
+        `📊 Initial processing: ${initialResult.processed} aggregate, ${initialResult.forensic} forensic, ${initialResult.tlsRpt} TLS-RPT, ${initialResult.errors} errors, ${initialResult.skipped} skipped, ${initialResult.quarantined} quarantined`,
       );
     } catch (error) {
       console.warn('⚠️ Initial email processing failed (this is normal if IMAP credentials are not configured):', error);
@@ -167,7 +286,7 @@ async function startServer() {
 
     if (schedulerEnabled) {
       console.log('⏰ Starting scheduled email processing...');
-      emailProcessor.scheduleProcessing(schedulerIntervalMs);
+      emailProcessor.scheduleProcessing(schedulerIntervalMs, runIngestionCycle);
       console.log(`⏲️ Email processing interval: ${Math.round(schedulerIntervalMs / 1000)} seconds`);
     } else {
       const disabledReason = schedulerPreference === 'false'
