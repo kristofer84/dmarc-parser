@@ -14,7 +14,7 @@
     "@fontsource-variable/inter": "^5.3.0",
     "@simplewebauthn/browser": "^14.0.0",
     "axios": "^1.20.0",
-    "chart.js": "^4.4.1",
+    "chart.js": "^4.6.1",
     "vue": "^3.5.44",
     "vue-chartjs": "^5.3.4",
     "vue-router": "^5.4.0"
@@ -26,7 +26,7 @@
     "postcss": "^8.4.32",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.3.3",
-    "vite": "^8.3.4",
+    "vite": "^8.3.5",
     "vue-tsc": "^3.3.13"
   },
   "license": "AGPL-3.0-only"
